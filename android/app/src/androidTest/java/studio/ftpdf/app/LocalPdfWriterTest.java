@@ -35,8 +35,8 @@ public class LocalPdfWriterTest {
       ) {
         assertEquals(pages, reader.getPageCount());
         for (int i = 0; i < pages; i++) try (PdfRenderer.Page p = reader.openPage(i)) {
-          assertEquals(paper.width, p.getWidth());
-          assertEquals(paper.height, p.getHeight());
+          assertEquals("PDF page width", paper.width, p.getWidth());
+          assertEquals("PDF page height", paper.height, p.getHeight());
           Bitmap bitmap = Bitmap.createBitmap(paper.width, paper.height, Bitmap.Config.ARGB_8888);
           bitmap.eraseColor(Color.WHITE);
           p.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
@@ -52,7 +52,7 @@ public class LocalPdfWriterTest {
             }
           }
           bitmap.recycle();
-          assertEquals(!blank, ink);
+          assertEquals("Page " + (i + 1) + " of " + pages + " has expected visible text", !blank, ink);
         }
       }
     } finally {

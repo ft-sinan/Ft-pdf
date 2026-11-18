@@ -62,7 +62,7 @@ jobs:
           target: default
           disable-animations: true
           working-directory: android
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest
+          script: bash ci/check-pdf-on-device.sh
 
   # An explicit commit marker requests a direct APK link in addition to the normal Actions ZIP.
   # Only trusted pushes can publish, never PR builds. Never force-push or overwrite newer changes.
