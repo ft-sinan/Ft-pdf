@@ -1417,6 +1417,7 @@ select {
   border-radius: 15px;
   background: var(--surface);
   width: min(100%, 460px);
+  max-height: calc(100vh - 48px);
   max-height: calc(100dvh - 48px);
   overflow: auto;
   box-shadow: 0 20px 90px #22170d38;
@@ -1925,6 +1926,7 @@ select {
   margin-top: 3px;
 }
 .toast {
+  pointer-events: none;
   position: fixed;
   bottom: max(20px, env(safe-area-inset-bottom));
   left: 50%;
@@ -1942,6 +1944,9 @@ select {
   font-size: 12px;
   line-height: 1.45;
   animation: appear 0.2s;
+}
+.toast button {
+  pointer-events: auto;
 }
 .toast > svg {
   color: #c6d4ad;

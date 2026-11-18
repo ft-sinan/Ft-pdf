@@ -86,6 +86,7 @@ type Dialog = {
     | 'logout'
     | 'rename'
     | 'move'
+    | 'readerTrash'
     | 'delete'
     | 'removeCollection';
   d?: Doc;
@@ -100,7 +101,7 @@ const views: Record<string, string> = {
   trash: 'Trash',
 };
 function readRoute() {
-  const [base, id] = location.hash.replace(/^#\/?/, '').split('/edit/');
+  const [base, id] = location.hash.replace(/^#\/?/, '').split(/\/(?:read|edit)\//);
   return {
     view: (base in views || base.startsWith('collection/') ? base : 'overview') as View,
     id: id || null,
@@ -145,7 +146,8 @@ export default function App() {
     [toast, setToast] = useState<Toast | null>(null),
     [incoming, setIncoming] = useState<File[]>([]),
     [seen, setSeen] = useState(false);
-  const dirty = useRef(false),
+  const editorBack = useRef<(() => void) | null>(null),
+    dirty = useRef(false),
     currentHash = useRef(location.hash),
     locks = useRef(new Set<string>()),
     serial = useRef(0);
@@ -214,7 +216,8 @@ export default function App() {
         setDrawer(false);
       } else if (route.id) {
         e.preventDefault();
-        location.hash = `/${route.view}`;
+        if (editorBack.current) editorBack.current();
+        else location.hash = `/${route.view}`;
       }
     };
     window.addEventListener('ft:back', back);
@@ -323,7 +326,7 @@ export default function App() {
     setPop(null);
     setDrawer(false);
     setDialog(null);
-    location.hash = `/${v}${id ? `/edit/${id}` : ''}`;
+    location.hash = `/${v}${id ? `/read/${id}` : ''}`;
   };
   const modal = (d: Dialog) => {
     setPop(null);
@@ -354,8 +357,18 @@ export default function App() {
     if (!w || !route.id) return;
     let live = true;
     api<Doc>(`/documents/${route.id}/open`, 'POST')
-      .then((d) => {
-        if (live) upsert(d);
+      .then((opened) => {
+        // Opening only changes 'opened'. A late response must not undo a newer trash/save.
+        if (live)
+          setW(
+            (s) =>
+              s && {
+                ...s,
+                documents: s.documents.map((d) =>
+                  d.id === opened.id ? { ...d, opened: Math.max(d.opened, opened.opened) } : d,
+                ),
+              },
+          );
       })
       .catch((e) => {
         if (live) notify(message(e), true);
@@ -363,7 +376,7 @@ export default function App() {
     return () => {
       live = false;
     };
-  }, [route.id, w?.user.id, upsert, notify]);
+  }, [route.id, w?.user.id, notify]);
   function showPop(kind: Pop['kind'], e: React.MouseEvent, d?: Doc) {
     const r = e.currentTarget.getBoundingClientRect();
     setPop({ kind, anchor: { top: r.top, left: r.left, right: r.right, bottom: r.bottom }, d });
@@ -397,13 +410,10 @@ export default function App() {
   const star = (d: Doc) =>
     void apply(d, { starred: !d.starred }, d.starred ? 'Removed from starred' : 'Added to starred');
   const restore = (d: Doc) => void apply(d, { trashed: false }, 'Document restored');
-  const trash = (d: Doc) =>
-    void apply(
-      d,
-      { trashed: true },
-      'Document moved to Trash',
-      () => void apply({ ...d, trashed: true }, { trashed: false }, 'Document restored'),
-    );
+  const trash = async (d: Doc) => {
+    await patch(d, { trashed: true });
+    notify('Document moved to Trash', false, () => restore(d));
+  };
   const updUser = async (p: Partial<User>) => {
     if (!w) return;
     const user = w.user;
@@ -492,6 +502,8 @@ export default function App() {
               d={current}
               collection={collections.find((c) => c.id === current.collectionId)}
               close={() => nav(view)}
+              backAction={editorBack}
+              remove={() => modal({ kind: 'readerTrash', d: current })}
               onDirty={onDirty}
               onSaved={(d) => {
                 upsert(d);
@@ -772,7 +784,7 @@ export default function App() {
                         className="hero-button"
                         onClick={() => (last ? open(last) : openNew())}
                       >
-                        {last ? 'Resume editing' : 'Create a document'}
+                        {last ? 'Continue reading' : 'Create a document'}
                         <ArrowRight size={15} />
                       </button>
                     </div>
@@ -876,7 +888,12 @@ export default function App() {
                       () => void downloadDoc(d).catch((e) => notify(message(e), true)),
                     )}
                     <hr />
-                    {popAct('Move to Trash', <Trash2 />, () => trash(d), true)}
+                    {popAct(
+                      'Move to Trash',
+                      <Trash2 />,
+                      () => void trash(d).catch((e) => notify(message(e), true)),
+                      true,
+                    )}
                   </>
                 )}
               </>
@@ -986,7 +1003,7 @@ export default function App() {
           onClose={close}
           onFile={upsert}
           onDone={(n, c, only) => {
-            nav(c ? `collection/${c}` : 'documents', onDevice && n === 1 ? only?.id : undefined);
+            nav(c ? `collection/${c}` : 'documents', n === 1 ? only?.id : undefined);
             notify(`${n} ${n === 1 ? 'file' : 'files'} imported`);
           }}
         />
@@ -1044,6 +1061,18 @@ export default function App() {
             );
             nav('documents');
             notify('Collection deleted. Your documents were kept.');
+          }}
+        />
+      )}
+      {dialog?.kind === 'readerTrash' && dialog.d && (
+        <Confirm
+          title="Move document to Trash?"
+          label="Move to Trash"
+          body={`“${fileName(dialog.d)}” will be removed from this library. You can restore it from Trash. The original file outside Ft PDF is not deleted.`}
+          onClose={close}
+          onConfirm={async () => {
+            await trash(dialog.d!);
+            nav(view);
           }}
         />
       )}

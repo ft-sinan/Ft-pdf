@@ -12,6 +12,7 @@ import {
   Folder,
   ShieldCheck,
   Palette,
+  Sparkles,
   UserRound,
 } from 'lucide-react';
 import {
@@ -30,6 +31,7 @@ import {
   Workspace,
 } from '../types';
 import { FileIcon } from './Art';
+import CreatorSpace from './CreatorSpace';
 import { Empty, ErrorNote, Modal, Spin } from './UI';
 export function CollectionField({
   collections,
@@ -706,7 +708,7 @@ export function Settings({
   auth: () => void;
   logout: () => void;
 }) {
-  const [tab, setTab] = useState<'appearance' | 'account'>('appearance'),
+  const [tab, setTab] = useState<'appearance' | 'account' | 'creator'>('appearance'),
     [name, setName] = useState(user.name),
     [err, setErr] = useState(''),
     [busy, setBusy] = useState(false);
@@ -725,19 +727,34 @@ export function Settings({
     <Modal title="Workspace settings" kicker="PREFERENCES" onClose={onClose}>
       <div className="settings-tabs">
         <button
+          aria-pressed={tab === 'appearance'}
           className={tab === 'appearance' ? 'active' : ''}
           onClick={() => setTab('appearance')}
         >
           <Palette size={15} />
           Appearance
         </button>
-        <button className={tab === 'account' ? 'active' : ''} onClick={() => setTab('account')}>
+        <button
+          aria-pressed={tab === 'account'}
+          className={tab === 'account' ? 'active' : ''}
+          onClick={() => setTab('account')}
+        >
           <UserRound size={15} />
           Account
         </button>
+        <button
+          aria-pressed={tab === 'creator'}
+          className={tab === 'creator' ? 'active' : ''}
+          onClick={() => setTab('creator')}
+        >
+          <Sparkles size={15} />
+          Creator Space
+        </button>
       </div>
       <div className="modal-body">
-        {tab === 'appearance' ? (
+        {tab === 'creator' ? (
+          <CreatorSpace />
+        ) : tab === 'appearance' ? (
           <>
             <div className="setting-intro">
               <h3>Workspace theme</h3>
@@ -808,7 +825,7 @@ export function Settings({
             </button>
           </>
         )}
-        {onDevice && (
+        {onDevice && tab !== 'creator' && (
           <p className="pwa-tip">
             <strong>On this device.</strong> Files and accounts stay on this phone. Save a copy to
             Android Files to back it up.

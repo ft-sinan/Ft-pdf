@@ -7,6 +7,8 @@ const assets = resolve('android/app/build/generated/ftAssets'),
   studio = join(assets, 'studio'),
   seed = join(assets, 'seed');
 await build({ mode: 'android', publicDir: false, build: { outDir: studio, emptyOutDir: true } });
+// The trusted contact card and Android's exact external-link allowlist share one source.
+await cp('shared/creator-contacts.json', join(assets, 'creator-contacts.json'));
 await Promise.all(
   ['brand.svg', 'fonts', 'icons'].map((p) =>
     cp(join('public', p), join(studio, p), { recursive: true }),

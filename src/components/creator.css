@@ -1,0 +1,335 @@
+/* A paper-and-ink counterpart to My Vault's creator coin. */
+.creator-space {
+  display: grid;
+  gap: 14px;
+}
+.maker-card {
+  isolation: isolate;
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  padding: 14px 15px 15px;
+  background-color: var(--tint);
+  background-image: radial-gradient(var(--ring) 0.55px, transparent 0.7px);
+  background-size: 9px 9px;
+}
+.maker-card:before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at center, var(--tint) 30%, transparent 100%),
+    linear-gradient(0deg, var(--tint), transparent 55%);
+}
+.maker-edition,
+.maker-kicker,
+.maker-hint,
+.maker-stats dt {
+  font-weight: 630;
+  letter-spacing: 1.2px;
+  font-size: 9px;
+}
+.maker-edition {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.maker-edition span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 20px;
+  background: var(--surface);
+  padding: 5px 9px;
+}
+.maker-stage {
+  position: relative;
+  height: 142px;
+  display: grid;
+  place-items: center;
+  perspective: 650px;
+}
+.maker-orbit,
+.maker-orbit:before {
+  border: 1px dashed var(--ring);
+  border-radius: 50%;
+  position: absolute;
+}
+.maker-orbit {
+  width: 138px;
+  height: 138px;
+  animation: maker-orbit 36s linear infinite;
+}
+.maker-orbit:before {
+  content: '';
+  inset: 6px;
+  border-style: solid;
+  opacity: 0.35;
+}
+.maker-orbit i {
+  width: 25px;
+  height: 25px;
+  box-shadow: 0 1px 3px #24180e24;
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  position: absolute;
+  animation: maker-orbit 36s linear infinite reverse;
+}
+.maker-orbit i:nth-child(1) {
+  left: 0;
+  top: 15px;
+}
+.maker-orbit i:nth-child(2) {
+  right: -10px;
+  top: 44px;
+}
+.maker-orbit i:nth-child(3) {
+  left: 36px;
+  bottom: -8px;
+}
+@keyframes maker-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.maker-coin {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  border: 0;
+  background: none;
+  border-radius: 50%;
+  padding: 0;
+}
+.coin-rotor,
+.coin-front,
+.coin-back {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+.coin-rotor {
+  transform-style: preserve-3d;
+  transition: transform 0.62s cubic-bezier(0.2, 0.72, 0.25, 1);
+}
+.maker-coin[aria-pressed='true'] .coin-rotor {
+  transform: rotateY(180deg);
+}
+.coin-front,
+.coin-back {
+  backface-visibility: hidden;
+  box-shadow:
+    0 4px 9px #61311a35,
+    inset 0 0 0 2px #f8d8af,
+    inset 0 0 0 5px #965735,
+    inset 0 0 0 6px #f8d8af;
+  background: linear-gradient(132deg, #87432b, #bc7152 45%, #93492e 75%);
+  color: #fff3d8;
+}
+.coin-front {
+  font:
+    italic 57px/0.94 Georgia,
+    serif;
+  text-shadow: 0 1px 2px #5c382b;
+}
+.coin-front span,
+.coin-back span {
+  font:
+    650 7px/1.2 'DM Sans',
+    sans-serif;
+  letter-spacing: 1.6px;
+}
+.coin-back {
+  gap: 5px;
+  background: linear-gradient(125deg, #334d41, #60856f);
+  transform: rotateY(180deg);
+  box-shadow:
+    0 4px 9px #30433535,
+    inset 0 0 0 2px #e8d6aa,
+    inset 0 0 0 5px #456151,
+    inset 0 0 0 6px #decda4;
+}
+.maker-kicker {
+  color: var(--muted);
+  margin-top: 6px;
+}
+.maker-card h3 {
+  font:
+    normal 34px/1.15 Georgia,
+    serif;
+  color: var(--ink);
+  letter-spacing: -1px;
+}
+.maker-handle {
+  font-size: 12px;
+  color: var(--accent);
+  line-height: 1.6;
+}
+.maker-hint {
+  font-size: 10px;
+  font-weight: 450;
+  letter-spacing: 0;
+  margin-top: 7px;
+  color: var(--muted);
+}
+.maker-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.maker-badges button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  font-size: 11px;
+  background: var(--surface);
+}
+.maker-badges button:hover,
+.maker-badges button[aria-pressed='true'] {
+  background: var(--tint);
+  color: var(--accent);
+  border-color: var(--ring);
+}
+.badge-detail,
+.copy-feedback {
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.badge-detail {
+  padding: 9px 12px;
+  border-left: 2px solid var(--ring);
+  background: var(--soft);
+}
+.maker-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 0;
+  padding: 10px 0;
+  border-block: 1px solid var(--line);
+  text-align: center;
+}
+.maker-stats div + div {
+  border-left: 1px solid var(--line);
+}
+.maker-stats dt {
+  text-transform: uppercase;
+  color: var(--muted);
+  font-size: 8px;
+}
+.maker-stats dd {
+  margin: 4px 0 0;
+  font-weight: 600;
+  font-size: 12px;
+}
+.connect-head h4 {
+  font-size: 14px;
+  margin: 0;
+}
+.connect-head p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+.maker-contacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.creator-contact {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  min-width: 0;
+}
+.creator-contact a,
+.creator-contact button {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 7px;
+}
+.creator-contact a {
+  min-width: 0;
+  flex: 1;
+  padding: 5px 7px 5px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  color: inherit;
+}
+.creator-contact a > svg {
+  color: var(--accent);
+}
+.creator-contact a > span {
+  flex: 1;
+}
+.creator-contact a > svg:last-child {
+  color: var(--muted);
+}
+.creator-contact button {
+  color: var(--muted);
+  padding: 0 8px;
+}
+.creator-contact a:hover,
+.creator-contact button:hover {
+  background: var(--tint);
+}
+.creator-contact.website {
+  grid-column: 1/-1;
+}
+.copy-feedback {
+  color: var(--accent);
+}
+.copy-feedback:empty {
+  display: none;
+}
+@media (max-width: 380px) {
+  .settings-tabs {
+    gap: 7px;
+  }
+  .settings-tabs button {
+    font-size: 11px;
+    gap: 4px;
+  }
+  .creator-contact a > svg:last-child {
+    display: none;
+  }
+  .maker-badges button {
+    padding: 6px 8px;
+  }
+  .maker-stage {
+    height: 134px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .maker-orbit,
+  .maker-orbit i {
+    animation: none;
+  }
+  .coin-rotor {
+    transition: none;
+  }
+}

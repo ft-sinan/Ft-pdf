@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: '0.0.0.0',
     allowedHosts: true,
+    watch: { ignored: ['**/android/**/build/**', '**/test-results/**'] },
     fs: {
       deny: [
         '.env',

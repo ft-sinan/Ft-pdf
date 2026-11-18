@@ -39,9 +39,10 @@ public class LocalProfileTest {
       ui.value("h1", "Personal drafts");
       ui.newDoc("Text", "Private draft");
       ui.button("Create document");
+      ui.edit();
       ui.fill("textarea.text-page", "My saved field notes");
       ui.save();
-      ui.closeEditor();
+      ui.closeDocument();
       drawer(ui);
       ui.click(".profile-btn");
       ui.button("Create account");
@@ -69,9 +70,9 @@ public class LocalProfileTest {
       drawer(ui);
       ui.button("Personal drafts");
       ui.button("Open Private draft.txt");
-      ui.value("textarea.text-page", "My saved field notes");
-      String id = new JSONTokener(ui.js("location.hash.split('/edit/')[1]")).nextValue().toString();
-      ui.closeEditor();
+      ui.value(".reader-text", "My saved field notes");
+      String id = ui.documentId();
+      ui.closeDocument();
       drawer(ui);
       ui.click(".profile-btn");
       ui.button("Sign out");
@@ -96,9 +97,15 @@ public class LocalProfileTest {
       ui.value(".profile-btn", "Local reader");
       drawer(ui);
       ui.button("Personal drafts");
-      ui.button("Actions for Private draft");
+      ui.button("Open Private draft.txt");
+      ui.reader();
+      ui.button("Delete document");
+      ui.value(".dialog-copy", "Private draft.txt");
+      ui.button("Cancel");
+      ui.reader();
+      ui.button("Delete document");
       ui.button("Move to Trash");
-      ui.await("trashed", "!q(\"[aria-label='Open Private draft.txt']\")");
+      ui.await("trashed", "!!q('.main-content') && !q(\"[aria-label='Open Private draft.txt']\")");
       assertTrue(
         "trash persisted before it becomes actionable",
         ((JSONObject) db.call("document.info", new JSONObject().put("id", id))).getBoolean(
@@ -118,7 +125,7 @@ public class LocalProfileTest {
       drawer(ui);
       ui.button("Personal drafts");
       ui.button("Open Private draft.txt");
-      ui.value("textarea.text-page", "My saved field notes");
+      ui.value(".reader-text", "My saved field notes");
     }
   }
 }

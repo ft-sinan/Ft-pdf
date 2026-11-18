@@ -108,6 +108,8 @@ public final class MainActivity extends Activity {
     WebSettings settings = web.getSettings();
     settings.setJavaScriptEnabled(true);
     settings.setDomStorageEnabled(true);
+    settings.setBuiltInZoomControls(true); // Pinch to read without a toolbar.
+    settings.setDisplayZoomControls(false);
     settings.setAllowFileAccess(false);
     settings.setAllowContentAccess(true);
     settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -116,10 +118,34 @@ public final class MainActivity extends Activity {
       showError("Update Android System WebView (or Chrome) to use Ft PDF’s offline editors.");
       return;
     }
+    // Never navigate the studio WebView away from its local origin. Only a main-frame
+    // user tap on an exact bundled contact can launch an external app, with no document URI.
+    Set<String> contacts = creatorLinks();
     web.setWebViewClient(
       new WebViewClient() {
         @Override
         public boolean shouldOverrideUrlLoading(WebView w, WebResourceRequest r) {
+          if (
+            r.isForMainFrame() &&
+            r.hasGesture() &&
+            !r.isRedirect() &&
+            contacts.contains(r.getUrl().toString()) &&
+            w.getUrl() != null &&
+            (ORIGIN + "/index.html").equals(w.getUrl().split("#", 2)[0])
+          ) {
+            Uri link = r.getUrl();
+            try {
+              startActivity(
+                new Intent(
+                  "mailto".equals(link.getScheme()) ? Intent.ACTION_SENDTO : Intent.ACTION_VIEW,
+                  link
+                )
+              );
+            } catch (android.content.ActivityNotFoundException | SecurityException missing) {
+              toast("No app can open this link. Use the copy button instead.");
+            }
+            return true;
+          }
           return (
             !r.isForMainFrame() ||
             !trusted(r.getUrl()) ||
@@ -324,6 +350,23 @@ public final class MainActivity extends Activity {
       }
     );
     web.loadUrl(ORIGIN + "/index.html");
+  }
+
+  private Set<String> creatorLinks() {
+    try (
+      Scanner file = new Scanner(getAssets().open("creator-contacts.json"), "UTF-8").useDelimiter(
+        "\\A"
+      )
+    ) {
+      JSONArray entries = new JSONArray(file.next());
+      Set<String> urls = new HashSet<>();
+      for (int i = 0; i < entries.length(); i++) urls.add(
+        entries.getJSONObject(i).getString("url")
+      );
+      return urls;
+    } catch (Exception invalid) {
+      return Collections.emptySet();
+    }
   }
 
   private static int leadingVersion(String v) {

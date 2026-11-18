@@ -160,7 +160,25 @@ final class StudioScreen implements AutoCloseable {
     );
   }
 
-  void closeEditor() throws Exception {
+  String documentId() throws Exception {
+    return new org.json.JSONTokener(js("location.hash.split('/read/')[1]")).nextValue().toString();
+  }
+
+  void reader() throws Exception {
+    await(
+      "read-only document, no edit tools",
+      "!!q('.editor-shell.reading') && !!btn('Delete document') && !q('.editor-tools,.annotation-layer,.save-btn,textarea,[contenteditable=true]')"
+    );
+  }
+
+  void edit() throws Exception {
+    reader();
+    button("Edit");
+    visible(".editor-tools");
+  }
+
+  void closeDocument() throws Exception {
+    if ("true".equals(js("!!btn('Back to reader')"))) button("Back to reader");
     button("Back to workspace");
     await("returned to library", "!!q('.main-content') && !q('.editor-shell')");
   }

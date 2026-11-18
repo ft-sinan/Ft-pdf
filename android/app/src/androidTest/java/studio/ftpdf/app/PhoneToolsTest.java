@@ -62,10 +62,6 @@ public class PhoneToolsTest {
     return o;
   }
 
-  private static String id(StudioScreen ui) throws Exception {
-    return new JSONTokener(ui.js("location.hash.split('/edit/')[1]")).nextValue().toString();
-  }
-
   // Produce a genuine shell-owned file in shared storage, not an app-private test fixture.
   private void shellText(String path, String value) throws Exception {
     ParcelFileDescriptor[] pipes = inst.getUiAutomation().executeShellCommandRw("tee " + path);
@@ -92,20 +88,41 @@ public class PhoneToolsTest {
       ui.button("Scan my phone");
       ui.button("Open phone file " + name);
       ui.value(text, "shared-original");
-      String copy = id(ui);
+      String copy = ui.documentId();
+      ui.edit();
       ui.fill(text, "Private edits stay in Ft PDF");
       ui.save();
-      ui.closeEditor();
+      ui.closeDocument();
       ui.button("Open phone file " + name);
       ui.value(text, "Private edits stay in Ft PDF");
-      assertEquals("Reuse same working copy", copy, id(ui));
+      assertEquals("Reuse same working copy", copy, ui.documentId());
       assertEquals("shared-original", os.executeShellCommand("cat " + path).trim());
-      ui.closeEditor();
+      ui.closeDocument();
       shellText(path, "New version from outside the app");
       ui.button("Open phone file " + name);
       ui.value(text, "New version from outside the app");
-      assertNotEquals("Changed source opens as a new copy", copy, id(ui));
-      ui.closeEditor();
+      assertNotEquals("Changed source opens as a new copy", copy, ui.documentId());
+      ui.reader();
+      String changed = ui.documentId();
+      ui.button("Delete document");
+      ui.value(".dialog-copy", name);
+      ui.button("Move to Trash");
+      ui.visible(".main-content");
+      assertTrue(
+        "Reader deleted only the library copy",
+        (
+          (JSONObject) DeviceLibrary.instance(app).call(
+            "document.info",
+            new JSONObject().put("id", changed)
+          )
+        ).getBoolean("trashed")
+      );
+      assertEquals(
+        "New version from outside the app",
+        os.executeShellCommand("cat " + path).trim()
+      );
+      ui.button("Undo");
+      ui.value(".toast", "Document restored");
       ui.button("Manage phone sources");
       ui.button("Stop phone scan");
       ui.await("source no longer visible", "!q('.phone-file') && !!btn('Scan my phone')");
@@ -128,7 +145,7 @@ public class PhoneToolsTest {
       nativeText("(?i)^allow$").click();
       ui.button("Open phone file Folder-note.txt");
       ui.value(text, "folder-only");
-      ui.closeEditor();
+      ui.closeDocument();
       ui.reload();
       ui.visible("[aria-label='Open phone file Folder-note.txt']");
       ui.button("Manage phone sources");
@@ -227,7 +244,7 @@ public class PhoneToolsTest {
       File temp = File.createTempFile("photos-", ".pdf", app.getCacheDir());
       try {
         try (
-          InputStream in = DeviceLibrary.instance(app).read(id(ui), false).stream;
+          InputStream in = DeviceLibrary.instance(app).read(ui.documentId(), false).stream;
           OutputStream out = new FileOutputStream(temp)
         ) {
           byte[] bytes = new byte[8192];
@@ -296,7 +313,7 @@ public class PhoneToolsTest {
       ui.fill("input[placeholder='Name your new copy']", "Two reports");
       ui.button("Run tool");
       ui.visible("canvas[aria-label='PDF page 1 of 6']");
-      ui.closeEditor();
+      ui.closeDocument();
       job(ui, "Split PDF");
       choose(ui, "Two reports.pdf", 1);
       ui.fill("[aria-label='Page ranges']", "1;2-3");
@@ -355,13 +372,16 @@ public class PhoneToolsTest {
       ui.fill(pw, "local-example-pass");
       ui.button("Unlock document");
       ui.visible("canvas[aria-label='PDF page 1 of 3']");
-      ui.closeEditor();
+      ui.reader();
+      assertEquals("Protected copy stays read-only", "false", ui.js("!!q('.read-edit-btn')"));
+      ui.closeDocument();
       job(ui, "Unlock PDF");
       choose(ui, "Protected report.pdf", 1);
       ui.fill(pw, "local-example-pass");
       ui.fill("input[placeholder='Name your new copy']", "Readable report");
       ui.button("Run tool");
       ui.visible("canvas[aria-label='PDF page 1 of 3']");
+      ui.edit();
       ui.await("unlocked output can be edited", "!!btn('Text')");
     }
   }
@@ -380,12 +400,12 @@ public class PhoneToolsTest {
       ui.fill("input[placeholder='Name your new copy']", "Searchable scan");
       ui.button("Run tool");
       ui.visible("canvas[aria-label='PDF page 1 of 1']");
-      ui.closeEditor();
+      ui.closeDocument();
       job(ui, "PDF to Word");
       choose(ui, "Searchable scan.pdf", 1);
       ui.button("Run tool");
       ui.await(
-        "recognized text in editable output",
+        "recognized text in the Word reader",
         "q(\"[aria-label='Word document content']\")?.innerText.toUpperCase().includes('FIELD NOTES')===true"
       );
     }

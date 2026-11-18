@@ -56,6 +56,8 @@ required_case "$pkg.OfflineStudioTest#createEditAndReopenPDF" 1 pdf-editor
 required_case "$pkg.OfflineStudioTest#htmlSourceIsEditableAndPreviewIsSandboxed" 1 html-editor
 required_case "$pkg.OfflineStudioTest#textRoundTripsThroughTheSystemFilesPicker" 1 files-roundtrip
 required_case "$pkg.OfflineStudioTest#wordFilesOpenWithAndroidEditAndSerializeOffline" 1 word-formats
+required_case "$pkg.ReaderSpaceTest#scrollPdfThenEditAndReadAgain" 1 scroll-reader
+required_case "$pkg.ReaderSpaceTest#creatorCardOpensOnlyTheSelectedContactOutsideStudio" 1 creator-space
 required_case "$pkg.LocalPdfWriterTest" 2 pdf-renderer
 # Test permission granted and denied in separate processes. Never waive app-level opt-in.
 adb shell pm clear "$pkg"

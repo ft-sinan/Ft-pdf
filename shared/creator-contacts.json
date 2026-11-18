@@ -1,0 +1,15 @@
+[
+  {
+    "label": "GitHub",
+    "url": "https://github.com/ft-sinan",
+    "contact": "https://github.com/ft-sinan"
+  },
+  { "label": "Telegram", "url": "https://t.me/Exotatic", "contact": "@Exotatic" },
+  { "label": "WhatsApp", "url": "https://wa.me/917558874118", "contact": "+91 7558874118" },
+  {
+    "label": "Email",
+    "url": "mailto:Mail.tosinaan@gmail.com",
+    "contact": "Mail.tosinaan@gmail.com"
+  },
+  { "label": "Website", "url": "https://sinanmk.my.id/", "contact": "https://sinanmk.my.id" }
+]

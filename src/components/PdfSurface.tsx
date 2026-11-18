@@ -32,6 +32,7 @@ import {
 } from 'pdfjs-dist';
 import workerURL from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { Doc, readPdf, message } from '../types';
+import PdfReader from './PdfReader';
 import { Empty, ErrorNote, Modal, Spin } from './UI';
 GlobalWorkerOptions.workerSrc = workerURL;
 const PdfTools = lazy(() => import('./PdfTools'));
@@ -88,12 +89,13 @@ const PdfSurface = forwardRef<
   {
     d: Doc;
     revision: number;
+    editing: boolean;
     busy: boolean;
     onDirty: (b: boolean) => void;
     onReady: (b: boolean) => void;
     commit: (blob: Blob) => Promise<void>;
   }
->(function PdfSurface({ d, revision, busy, onDirty, onReady, commit }, ref) {
+>(function PdfSurface({ d, revision, editing, busy, onDirty, onReady, commit }, ref) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null),
     [loading, setLoading] = useState(true),
     [rendering, setRendering] = useState(false),
@@ -185,17 +187,28 @@ const PdfSurface = forwardRef<
     };
   }, [d.id, revision, retry, onReady]);
   useEffect(() => {
-    onDirty(marks.length > 0);
-  }, [marks.length, onDirty]);
+    onDirty(editing && marks.length > 0);
+  }, [editing, marks.length, onDirty]);
+  useEffect(() => {
+    if (!editing) {
+      setMarks([]);
+      setUndone([]);
+      setAt(null);
+      setDraft(null);
+      draftRef.current = null;
+      setTool('hand');
+      setManage(false);
+    }
+  }, [editing]);
   useEffect(() => {
     const el = surface.current;
     if (!el) return;
     const ro = new ResizeObserver((e) => setWidth(e[0].contentRect.width));
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [editing]);
   useEffect(() => {
-    if (!pdf || !canvas.current) return;
+    if (!editing || !pdf || !canvas.current) return;
     let live = true;
     let task: RenderTask | undefined;
     setRendering(true);
@@ -226,7 +239,7 @@ const PdfSurface = forwardRef<
       live = false;
       task?.cancel();
     };
-  }, [pdf, page, shown]);
+  }, [editing, pdf, page, shown]);
   useEffect(() => {
     surface.current?.scrollTo(0, 0);
   }, [page]);
@@ -328,99 +341,101 @@ const PdfSurface = forwardRef<
   ] as const;
   return (
     <div className="pdf-workspace">
-      <div className="editor-tools pdf-tools">
-        <div className="tool-group">
-          <button
-            className="icon-btn"
-            aria-label="Previous page"
-            disabled={page <= 1 || !pdf}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <span className="page-indicator">
-            {page} <i>/</i> {pdf?.numPages || '–'}
-          </span>
-          <button
-            className="icon-btn"
-            aria-label="Next page"
-            disabled={!pdf || page >= pdf.numPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
-        <i className="tool-sep" />
-        <div className="tool-group">
-          {tools.map(([k, label, I]) => (
+      {editing && (
+        <div className="editor-tools pdf-tools">
+          <div className="tool-group">
             <button
-              key={k}
-              className={`tool-button ${tool === k ? 'active' : ''}`}
-              title={label}
-              aria-label={label}
-              aria-pressed={tool === k}
-              disabled={busy || !pdf || (d.locked && k !== 'hand')}
-              onClick={() => setTool(k)}
+              className="icon-btn"
+              aria-label="Previous page"
+              disabled={page <= 1 || !pdf}
+              onClick={() => setPage((p) => p - 1)}
             >
-              <I size={16} />
-              <span>{label}</span>
+              <ChevronLeft size={16} />
             </button>
-          ))}
+            <span className="page-indicator">
+              {page} <i>/</i> {pdf?.numPages || '–'}
+            </span>
+            <button
+              className="icon-btn"
+              aria-label="Next page"
+              disabled={!pdf || page >= pdf.numPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+          <i className="tool-sep" />
+          <div className="tool-group">
+            {tools.map(([k, label, I]) => (
+              <button
+                key={k}
+                className={`tool-button ${tool === k ? 'active' : ''}`}
+                title={label}
+                aria-label={label}
+                aria-pressed={tool === k}
+                disabled={busy || !pdf || (d.locked && k !== 'hand')}
+                onClick={() => setTool(k)}
+              >
+                <I size={16} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+          <i className="tool-sep" />
+          <div className="tool-group">
+            <button
+              className="icon-btn"
+              title="Undo annotation"
+              aria-label="Undo annotation"
+              disabled={!marks.length || busy}
+              onClick={undo}
+            >
+              <Undo2 size={16} />
+            </button>
+            <button
+              className="icon-btn"
+              title="Redo annotation"
+              aria-label="Redo annotation"
+              disabled={!undone.length || busy}
+              onClick={redo}
+            >
+              <Redo2 size={16} />
+            </button>
+          </div>
+          <button
+            className="tool-button pdf-manage"
+            title="Organize pages and fill forms"
+            aria-label="PDF tools"
+            disabled={busy || d.locked || !pdf}
+            onClick={() => setManage(true)}
+          >
+            <Files size={16} />
+            <span>PDF tools</span>
+          </button>
+          <div className="zoom-tools tool-group">
+            <button
+              className="icon-btn"
+              aria-label="Zoom out"
+              disabled={zoom <= 0.5}
+              onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
+            >
+              <Minus size={15} />
+            </button>
+            <button className="zoom-percent" title="Fit to width" onClick={() => setZoom(1)}>
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              className="icon-btn"
+              aria-label="Zoom in"
+              disabled={zoom >= 2}
+              onClick={() => setZoom((z) => Math.min(2, z + 0.25))}
+            >
+              <Plus size={15} />
+            </button>
+          </div>
         </div>
-        <i className="tool-sep" />
-        <div className="tool-group">
-          <button
-            className="icon-btn"
-            title="Undo annotation"
-            aria-label="Undo annotation"
-            disabled={!marks.length || busy}
-            onClick={undo}
-          >
-            <Undo2 size={16} />
-          </button>
-          <button
-            className="icon-btn"
-            title="Redo annotation"
-            aria-label="Redo annotation"
-            disabled={!undone.length || busy}
-            onClick={redo}
-          >
-            <Redo2 size={16} />
-          </button>
-        </div>
-        <button
-          className="tool-button pdf-manage"
-          title="Organize pages and fill forms"
-          aria-label="PDF tools"
-          disabled={busy || d.locked || !pdf}
-          onClick={() => setManage(true)}
-        >
-          <Files size={16} />
-          <span>PDF tools</span>
-        </button>
-        <div className="zoom-tools tool-group">
-          <button
-            className="icon-btn"
-            aria-label="Zoom out"
-            disabled={zoom <= 0.5}
-            onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
-          >
-            <Minus size={15} />
-          </button>
-          <button className="zoom-percent" title="Fit to width" onClick={() => setZoom(1)}>
-            {Math.round(zoom * 100)}%
-          </button>
-          <button
-            className="icon-btn"
-            aria-label="Zoom in"
-            disabled={zoom >= 2}
-            onClick={() => setZoom((z) => Math.min(2, z + 0.25))}
-          >
-            <Plus size={15} />
-          </button>
-        </div>
-      </div>
-      {tool !== 'hand' && (
+      )}
+      {editing && tool !== 'hand' && (
         <div className="context-bar">
           <span>
             {tool === 'text'
@@ -463,114 +478,123 @@ const PdfSurface = forwardRef<
           Protected PDF · Read-only
         </div>
       )}
-      <div className="pdf-scroll" ref={surface}>
-        {err ? (
-          <div className="editor-issue">
-            <Empty
-              title="Could not display PDF"
-              body={err}
-              action={
-                <button className="btn secondary" onClick={() => setRetry((n) => n + 1)}>
-                  Try again
-                </button>
-              }
-            />
-          </div>
-        ) : loading ? (
-          <div className="editor-loading">
-            <Spin />
-            Opening PDF…
-          </div>
-        ) : (
-          <div className="pdf-sheet-wrap" style={{ minWidth: shown + 24 }}>
-            <div
-              className={`pdf-sheet mode-${tool}`}
-              style={{ width: shown, aspectRatio: `${base.width}/${base.height}` }}
-            >
-              <canvas ref={canvas} aria-label={`PDF page ${page} of ${pdf?.numPages}`} />
-              <svg
-                ref={svg}
-                className="annotation-layer"
-                viewBox={`0 0 ${base.width} ${base.height}`}
-                style={{
-                  pointerEvents: tool === 'hand' || busy || rendering ? 'none' : 'auto',
-                  touchAction: tool === 'hand' ? 'auto' : 'none',
-                }}
-                onPointerDown={(e) => {
-                  if (tool === 'hand' || e.button !== 0 || busy) return;
-                  const p = point(e);
-                  if (tool === 'text') {
-                    setAt(p);
-                    setText('');
-                    return;
-                  }
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  const m: Mark = {
-                    type: tool,
-                    page,
-                    points: [p, p],
-                    color: tool === 'highlight' ? hl : color,
-                    size: 2,
-                  };
-                  draftRef.current = m;
-                  setDraft(m);
-                }}
-                onPointerMove={(e) => {
-                  const m = draftRef.current;
-                  if (!m) return;
-                  const p = point(e),
-                    next = {
-                      ...m,
-                      points: m.type === 'highlight' ? [m.points[0], p] : [...m.points, p],
-                    };
-                  draftRef.current = next;
-                  setDraft(next);
-                }}
-                onPointerUp={(e) => {
-                  const m = draftRef.current;
-                  if (!m) return;
-                  const p = point(e);
-                  if (
-                    Math.hypot(p.x - m.points[0].x, p.y - m.points[0].y) > 1 ||
-                    m.points.length > 3
-                  )
-                    add({
-                      ...m,
-                      points: m.type === 'highlight' ? [m.points[0], p] : [...m.points, p],
-                    });
-                  draftRef.current = null;
-                  setDraft(null);
-                }}
-                onPointerCancel={() => {
-                  draftRef.current = null;
-                  setDraft(null);
-                }}
-              >
-                {marks
-                  .filter((m) => m.page === page)
-                  .map((m, i) => (
-                    <Marks key={i} m={m} />
-                  ))}
-                {draft && <Marks m={draft} />}
-              </svg>
-              {rendering && (
-                <span className="page-rendering">
-                  <Spin size={14} />
-                </span>
-              )}
+      {!editing && pdf && !loading && !err ? (
+        <PdfReader pdf={pdf} initialPage={page} onPage={setPage} selectable={!d.locked} />
+      ) : (
+        <div className="pdf-scroll" ref={surface}>
+          {err ? (
+            <div className="editor-issue">
+              <Empty
+                title="Could not display PDF"
+                body={err}
+                action={
+                  <button className="btn secondary" onClick={() => setRetry((n) => n + 1)}>
+                    Try again
+                  </button>
+                }
+              />
             </div>
-          </div>
-        )}
-      </div>
-      <div className="editor-foot">
-        <span>PDF DOCUMENT</span>
-        <span>
-          {marks.length
-            ? `${marks.length} pending ${marks.length === 1 ? 'annotation' : 'annotations'}`
-            : 'Original page layout'}
-        </span>
-      </div>
-      {manage && (
+          ) : loading ? (
+            <div className="editor-loading">
+              <Spin />
+              Opening PDF…
+            </div>
+          ) : (
+            editing &&
+            pdf && (
+              <div className="pdf-sheet-wrap" style={{ minWidth: shown + 24 }}>
+                <div
+                  className={`pdf-sheet mode-${tool}`}
+                  style={{ width: shown, aspectRatio: `${base.width}/${base.height}` }}
+                >
+                  <canvas ref={canvas} aria-label={`PDF page ${page} of ${pdf?.numPages}`} />
+                  <svg
+                    ref={svg}
+                    className="annotation-layer"
+                    viewBox={`0 0 ${base.width} ${base.height}`}
+                    style={{
+                      pointerEvents: tool === 'hand' || busy || rendering ? 'none' : 'auto',
+                      touchAction: tool === 'hand' ? 'auto' : 'none',
+                    }}
+                    onPointerDown={(e) => {
+                      if (tool === 'hand' || e.button !== 0 || busy) return;
+                      const p = point(e);
+                      if (tool === 'text') {
+                        setAt(p);
+                        setText('');
+                        return;
+                      }
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      const m: Mark = {
+                        type: tool,
+                        page,
+                        points: [p, p],
+                        color: tool === 'highlight' ? hl : color,
+                        size: 2,
+                      };
+                      draftRef.current = m;
+                      setDraft(m);
+                    }}
+                    onPointerMove={(e) => {
+                      const m = draftRef.current;
+                      if (!m) return;
+                      const p = point(e),
+                        next = {
+                          ...m,
+                          points: m.type === 'highlight' ? [m.points[0], p] : [...m.points, p],
+                        };
+                      draftRef.current = next;
+                      setDraft(next);
+                    }}
+                    onPointerUp={(e) => {
+                      const m = draftRef.current;
+                      if (!m) return;
+                      const p = point(e);
+                      if (
+                        Math.hypot(p.x - m.points[0].x, p.y - m.points[0].y) > 1 ||
+                        m.points.length > 3
+                      )
+                        add({
+                          ...m,
+                          points: m.type === 'highlight' ? [m.points[0], p] : [...m.points, p],
+                        });
+                      draftRef.current = null;
+                      setDraft(null);
+                    }}
+                    onPointerCancel={() => {
+                      draftRef.current = null;
+                      setDraft(null);
+                    }}
+                  >
+                    {marks
+                      .filter((m) => m.page === page)
+                      .map((m, i) => (
+                        <Marks key={i} m={m} />
+                      ))}
+                    {draft && <Marks m={draft} />}
+                  </svg>
+                  {rendering && (
+                    <span className="page-rendering">
+                      <Spin size={14} />
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          )}
+        </div>
+      )}
+      {editing && (
+        <div className="editor-foot">
+          <span>PDF DOCUMENT</span>
+          <span>
+            {marks.length
+              ? `${marks.length} pending ${marks.length === 1 ? 'annotation' : 'annotations'}`
+              : 'Original page layout'}
+          </span>
+        </div>
+      )}
+      {editing && manage && (
         <Suspense
           fallback={
             <Modal title="PDF tools" onClose={() => setManage(false)}>
@@ -588,7 +612,7 @@ const PdfSurface = forwardRef<
           />
         </Suspense>
       )}
-      {at && (
+      {editing && at && (
         <Modal
           title="Add text to page"
           subtitle="Text will be embedded in the PDF when you save."

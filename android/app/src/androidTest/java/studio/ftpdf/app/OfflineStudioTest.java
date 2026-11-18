@@ -41,10 +41,6 @@ public class OfflineStudioTest {
     if (ui != null) ui.close();
   }
 
-  private String id() throws Exception {
-    return new JSONTokener(ui.js("location.hash.split('/edit/')[1]")).nextValue().toString();
-  }
-
   private DeviceLibrary db() {
     return DeviceLibrary.instance(app);
   }
@@ -88,11 +84,12 @@ public class OfflineStudioTest {
   public void createEditAndReopenPDF() throws Exception {
     ui.button("Open Quarterly report.pdf");
     ui.visible("canvas[aria-label^='PDF page 1 of']");
-    ui.closeEditor();
+    ui.closeDocument();
     ui.newDoc("PDF", "Offline pages");
     ui.fill(".pdf-draft", "A report created with no network.");
     ui.button("Create PDF");
     ui.visible("canvas[aria-label='PDF page 1 of 1']");
+    ui.edit();
     ui.button("Text");
     ui.await("ready to annotate", "q('.annotation-layer')?.style.pointerEvents==='auto'");
     ui.touch(".pdf-sheet");
@@ -108,7 +105,7 @@ public class OfflineStudioTest {
     File f = File.createTempFile("ft-saved-", ".pdf", app.getCacheDir());
     try {
       try (
-        InputStream in = db().read(id(), false).stream;
+        InputStream in = db().read(ui.documentId(), false).stream;
         OutputStream out = new FileOutputStream(f)
       ) {
         copy(in, out);
@@ -156,14 +153,15 @@ public class OfflineStudioTest {
         ui.button("Import 1 file");
         ui.value(word, legacy ? "second test" : "Timeline");
         String mark = legacy ? "Converted field notes" : "Edited local proposal";
+        ui.edit();
         ui.fill(word, mark);
         ui.save();
-        ui.closeEditor();
+        ui.closeDocument();
         ui.button(legacy ? "Open legacy-word.docx" : "Open Imported brief.docx");
         ui.value(word, mark);
         ui.reload();
         ui.value(word, mark);
-        try (ZipInputStream zip = new ZipInputStream(db().read(id(), false).stream)) {
+        try (ZipInputStream zip = new ZipInputStream(db().read(ui.documentId(), false).stream)) {
           boolean ok = false;
           ZipEntry e;
           while ((e = zip.getNextEntry()) != null) {
@@ -175,7 +173,7 @@ public class OfflineStudioTest {
           }
           assertTrue("Real DOCX contains the edit", ok);
         }
-        ui.closeEditor();
+        ui.closeDocument();
       } finally {
         app.getContentResolver().delete(u, null, null);
       }
@@ -186,14 +184,20 @@ public class OfflineStudioTest {
   public void htmlSourceIsEditableAndPreviewIsSandboxed() throws Exception {
     ui.newDoc("HTML", "Offline page");
     ui.button("Create document");
+    ui.visible("iframe[sandbox='']");
+    ui.edit();
     ui.fill(html, "<h1>Offline field guide</h1>");
     ui.button("Preview");
     ui.visible("iframe[sandbox='']");
     ui.button("Save changes");
     ui.await("stored HTML", "q('.save-status')?.textContent==='Saved'");
     ui.reload();
-    ui.value(html, "Offline field guide");
-    assertEquals("<h1>Offline field guide</h1>", read(db().read(id(), false).stream));
+    ui.reader();
+    ui.await(
+      "saved page opens as a sandboxed preview",
+      "q('iframe[sandbox]')?.srcdoc.includes('Offline field guide')===true"
+    );
+    assertEquals("<h1>Offline field guide</h1>", read(db().read(ui.documentId(), false).stream));
   }
 
   @Test
@@ -202,6 +206,7 @@ public class OfflineStudioTest {
       data = "Notes from the installed Android app.";
     ui.newDoc("Text", title);
     ui.button("Create document");
+    ui.edit();
     ui.fill(text, data);
     ui.save();
     ui.reload();
@@ -221,7 +226,7 @@ public class OfflineStudioTest {
         SystemClock.sleep(150);
       }
       assertEquals("Exported copy in Downloads", data, bytes);
-      ui.closeEditor();
+      ui.closeDocument();
       ui.button("Import files");
       ui.touch(".dropzone");
       UiObject2 item = device.wait(Until.findObject(By.text(title + ".txt")), 15000);

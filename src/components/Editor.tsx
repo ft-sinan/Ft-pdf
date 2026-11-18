@@ -1,6 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  Pencil,
+  Trash2,
+  BookOpen,
   Bold,
   Check,
   Code2,
@@ -27,6 +30,8 @@ import {
   sizeOf,
 } from '../types';
 import { FileIcon } from './Art';
+import { Confirm } from './Forms';
+import { HtmlPreview } from './HtmlPreview';
 import { Empty, ErrorNote, Spin } from './UI';
 import type { PdfHandle } from './PdfSurface';
 import './editor.css';
@@ -68,6 +73,8 @@ export default function Editor({
   d,
   collection,
   close,
+  remove,
+  backAction,
   onDirty,
   onSaved,
   notify,
@@ -75,11 +82,15 @@ export default function Editor({
   d: Doc;
   collection?: Collection;
   close: () => void;
+  remove: () => void;
+  backAction: React.RefObject<(() => void) | null>;
   onDirty: (b: boolean) => void;
   onSaved: (d: Doc) => void;
   notify: (s: string, err?: boolean) => void;
 }) {
-  const [initial, setInitial] = useState(''),
+  const [editing, setEditing] = useState(false),
+    [discard, askDiscard] = useState(false),
+    [initial, setInitial] = useState(''),
     [content, setContent] = useState(''),
     [loading, setLoading] = useState(d.type !== 'pdf'),
     [failure, setFailure] = useState(''),
@@ -176,47 +187,89 @@ export default function Editor({
         void action.current();
       }
     };
+    if (!editing) return;
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, []);
+  }, [editing]);
+  const read = useCallback(() => {
+    setContent(original.current);
+    setInitial(original.current);
+    setDirty(false);
+    onDirty(false);
+    setSaveErr('');
+    setTab('source');
+    setEditing(false);
+    askDiscard(false);
+  }, [onDirty]);
+  const requestRead = useCallback(() => {
+    if (busy) return;
+    if (dirty) askDiscard(true);
+    else read();
+  }, [busy, dirty, read]);
+  useEffect(() => {
+    backAction.current = editing ? requestRead : null;
+    return () => {
+      backAction.current = null;
+    };
+  }, [editing, requestRead, backAction]);
   const command = (cmd: string, value?: string) => {
     rich.current?.focus();
     document.execCommand(cmd, false, value);
     if (rich.current) change(rich.current.innerHTML);
   };
-  const wordCount = (d.type === 'docx' ? content.replace(/<[^>]*>/g, ' ') : content)
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean).length;
+  const wordCount =
+    !editing || d.type === 'pdf' || d.type === 'html'
+      ? 0
+      : (d.type === 'docx' ? content.replace(/<[^>]*>/g, ' ') : content)
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean).length;
   return (
-    <div className="editor-shell">
+    <div
+      className={`editor-shell ${editing ? 'editing' : 'reading'}`}
+      data-mode={editing ? 'edit' : 'read'}
+    >
       <header className="editor-header">
         <button
           className="icon-btn back-btn"
-          aria-label="Back to workspace"
-          title="Back to workspace"
+          aria-label={editing ? 'Back to reader' : 'Back to workspace'}
+          title={editing ? 'Back to reader' : 'Back to workspace'}
           disabled={busy}
-          onClick={close}
+          onClick={editing ? requestRead : close}
         >
           <ArrowLeft size={20} />
         </button>
         <div className="editor-title">
           <FileIcon type={d.type} />
           <span>
-            <strong>{fileName(d)}</strong>
+            <strong title={fileName(d)}>{fileName(d)}</strong>
             <small>
-              {collection?.name || 'Unfiled'} <i>/</i> {labels[d.type]}
+              {editing ? 'Editing' : d.locked ? 'Protected · Read only' : 'Reading'} <i>/</i>{' '}
+              {collection?.name || labels[d.type]}
             </small>
           </span>
         </div>
         <div className="save-tools">
-          <span className={`save-status ${dirty ? 'dirty' : ''}`}>
-            {dirty ? <i /> : <Check size={13} />}
-            {dirty ? 'Unsaved changes' : 'Saved'}
-          </span>
+          {editing && (
+            <span className={`save-status ${dirty ? 'dirty' : ''}`}>
+              {dirty ? <i /> : <Check size={13} />}
+              {dirty ? 'Unsaved changes' : 'Saved'}
+            </span>
+          )}
+          {!editing && (
+            <button
+              className="btn secondary reader-delete"
+              aria-label="Delete document"
+              title="Move to Trash"
+              onClick={remove}
+            >
+              <Trash2 size={16} />
+              <span>Delete</span>
+            </button>
+          )}
           <button
             className="btn secondary download-btn"
-            disabled={!ready || busy}
+            disabled={busy || (editing && !ready)}
             aria-label={onDevice ? 'Save a copy to Files' : 'Download document'}
             title={
               onDevice
@@ -225,18 +278,36 @@ export default function Editor({
                   ? 'Save and download'
                   : 'Download document'
             }
-            onClick={() => void save(true)}
+            onClick={() =>
+              editing ? void save(true) : void downloadDoc(d).catch((e) => setSaveErr(message(e)))
+            }
           >
             <Download size={16} />
           </button>
-          <button
-            className="btn primary save-btn"
-            disabled={!dirty || busy || !ready}
-            onClick={() => void save()}
-          >
-            {busy ? <Spin size={15} /> : <Save size={15} />}
-            <span>{busy ? 'Saving…' : 'Save changes'}</span>
-          </button>
+          {editing ? (
+            <button
+              className="btn primary save-btn"
+              disabled={!dirty || busy || !ready}
+              onClick={() => void save()}
+            >
+              {busy ? <Spin size={15} /> : <Save size={15} />}
+              <span>{busy ? 'Saving…' : 'Save changes'}</span>
+            </button>
+          ) : (
+            !d.locked && (
+              <button
+                className="btn primary read-edit-btn"
+                disabled={!ready}
+                onClick={() => {
+                  setInitial(content);
+                  setEditing(true);
+                }}
+              >
+                <Pencil size={15} />
+                Edit
+              </button>
+            )
+          )}
         </div>
       </header>
       {saveErr && (
@@ -249,7 +320,7 @@ export default function Editor({
           fallback={
             <div className="editor-loading">
               <Spin />
-              Loading PDF tools…
+              Opening PDF…
             </div>
           }
         >
@@ -257,6 +328,7 @@ export default function Editor({
             ref={pdf}
             d={d}
             revision={rev}
+            editing={editing}
             busy={busy}
             onReady={setReady}
             onDirty={pdfDirty}
@@ -282,70 +354,72 @@ export default function Editor({
         </Suspense>
       ) : (
         <>
-          <div className="editor-tools">
-            {d.type === 'docx' ? (
-              <>
-                <select
-                  className="paragraph-select"
-                  aria-label="Paragraph style"
-                  defaultValue="p"
-                  onChange={(e) => command('formatBlock', e.target.value)}
-                >
-                  <option value="p">Paragraph</option>
-                  <option value="h1">Heading 1</option>
-                  <option value="h2">Heading 2</option>
-                  <option value="h3">Heading 3</option>
-                </select>
-                <i className="tool-sep" />
-                {(
-                  [
-                    ['bold', 'Bold', Bold],
-                    ['italic', 'Italic', Italic],
-                    ['underline', 'Underline', Underline],
-                    ['insertUnorderedList', 'Bullet list', List],
-                    ['insertOrderedList', 'Numbered list', ListOrdered],
-                    ['undo', 'Undo', Undo2],
-                    ['redo', 'Redo', Redo2],
-                  ] as const
-                ).map(([cmd, label, I]) => (
-                  <button
-                    key={cmd}
-                    className="icon-btn"
-                    title={label}
-                    aria-label={label}
-                    disabled={!ready || busy}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => command(cmd)}
+          {editing && (
+            <div className="editor-tools">
+              {d.type === 'docx' ? (
+                <>
+                  <select
+                    className="paragraph-select"
+                    aria-label="Paragraph style"
+                    defaultValue="p"
+                    onChange={(e) => command('formatBlock', e.target.value)}
                   >
-                    <I size={16} />
+                    <option value="p">Paragraph</option>
+                    <option value="h1">Heading 1</option>
+                    <option value="h2">Heading 2</option>
+                    <option value="h3">Heading 3</option>
+                  </select>
+                  <i className="tool-sep" />
+                  {(
+                    [
+                      ['bold', 'Bold', Bold],
+                      ['italic', 'Italic', Italic],
+                      ['underline', 'Underline', Underline],
+                      ['insertUnorderedList', 'Bullet list', List],
+                      ['insertOrderedList', 'Numbered list', ListOrdered],
+                      ['undo', 'Undo', Undo2],
+                      ['redo', 'Redo', Redo2],
+                    ] as const
+                  ).map(([cmd, label, I]) => (
+                    <button
+                      key={cmd}
+                      className="icon-btn"
+                      title={label}
+                      aria-label={label}
+                      disabled={!ready || busy}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => command(cmd)}
+                    >
+                      <I size={16} />
+                    </button>
+                  ))}
+                </>
+              ) : d.type === 'html' ? (
+                <div className="tool-group">
+                  <button
+                    className={`tool-button ${tab === 'source' ? 'active' : ''}`}
+                    onClick={() => setTab('source')}
+                  >
+                    <Code2 size={16} />
+                    Source
                   </button>
-                ))}
-              </>
-            ) : d.type === 'html' ? (
-              <div className="tool-group">
-                <button
-                  className={`tool-button ${tab === 'source' ? 'active' : ''}`}
-                  onClick={() => setTab('source')}
-                >
-                  <Code2 size={16} />
-                  Source
-                </button>
-                <button
-                  className={`tool-button ${tab === 'preview' ? 'active' : ''}`}
-                  onClick={() => setTab('preview')}
-                >
-                  <Eye size={16} />
-                  Preview
-                </button>
-              </div>
-            ) : (
-              <div className="plain-label">
-                <FileText size={15} />
-                Plain text editor
-              </div>
-            )}
-            <span className="editor-format">.{d.type}</span>
-          </div>
+                  <button
+                    className={`tool-button ${tab === 'preview' ? 'active' : ''}`}
+                    onClick={() => setTab('preview')}
+                  >
+                    <Eye size={16} />
+                    Preview
+                  </button>
+                </div>
+              ) : (
+                <div className="plain-label">
+                  <FileText size={15} />
+                  Plain text editor
+                </div>
+              )}
+              <span className="editor-format">.{d.type}</span>
+            </div>
+          )}
           {failure ? (
             <div className="editor-issue">
               <Empty
@@ -364,20 +438,41 @@ export default function Editor({
               Opening document…
             </div>
           ) : (
-            <div className={`writing-area ${d.type === 'html' ? 'html-area' : ''}`}>
-              {d.type === 'docx' ? (
+            <div
+              tabIndex={editing ? undefined : 0}
+              role={editing ? undefined : 'region'}
+              aria-label={editing ? undefined : 'Scrollable document'}
+              className={`writing-area ${d.type === 'html' ? 'html-area' : ''}`}
+            >
+              {!editing ? (
+                d.type === 'html' ? (
+                  <HtmlPreview content={content} />
+                ) : (
+                  <>
+                    <div className="editor-paper-caption">{labels[d.type].toUpperCase()}</div>
+                    {d.type === 'docx' ? (
+                      <article
+                        aria-label="Word document content"
+                        className="rich-page paper-sheet"
+                        onClick={(e) => {
+                          if ((e.target as Element).closest('a')) e.preventDefault();
+                        }}
+                        dangerouslySetInnerHTML={{ __html: content }}
+                      />
+                    ) : (
+                      <article aria-label="Plain text content" className="paper-sheet reader-text">
+                        {content}
+                      </article>
+                    )}
+                  </>
+                )
+              ) : d.type === 'docx' ? (
                 <>
                   <div className="editor-paper-caption">EDITABLE WORD DOCUMENT</div>
                   <RichPage initial={initial} inner={rich} disabled={busy} changed={change} />
                 </>
               ) : d.type === 'html' && tab === 'preview' ? (
-                <iframe
-                  className="html-preview"
-                  sandbox=""
-                  referrerPolicy="no-referrer"
-                  title="Safe HTML preview"
-                  srcDoc={`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none';"><meta name="viewport" content="width=device-width, initial-scale=1">${content}`}
-                />
+                <HtmlPreview content={content} />
               ) : (
                 <>
                   <div className="editor-paper-caption">
@@ -396,33 +491,52 @@ export default function Editor({
               )}
             </div>
           )}
-          <div className="editor-foot">
-            <span>
-              {d.type === 'docx'
-                ? 'WORD DOCUMENT'
-                : d.type === 'html'
-                  ? 'HTML EDITOR'
-                  : 'TEXT DOCUMENT'}
-            </span>
-            {d.type === 'docx' ? (
-              <button
-                onClick={() =>
-                  notify(
-                    'Word exports preserve text, basic formatting, tables, and common embedded images. Download the original first if exact layout, headers, or tracked changes are important.',
-                  )
-                }
-              >
-                Formatting details
-              </button>
-            ) : null}
-            <span>
-              {d.type === 'html'
-                ? `${content.length.toLocaleString()} characters`
-                : `${wordCount.toLocaleString()} words`}{' '}
-              <i>·</i> {sizeOf(d.size)}
-            </span>
-          </div>
+          {editing ? (
+            <div className="editor-foot">
+              <span>
+                {d.type === 'docx'
+                  ? 'WORD DOCUMENT'
+                  : d.type === 'html'
+                    ? 'HTML EDITOR'
+                    : 'TEXT DOCUMENT'}
+              </span>
+              {d.type === 'docx' ? (
+                <button
+                  onClick={() =>
+                    notify(
+                      'Word exports preserve text, basic formatting, tables, and common embedded images. Download the original first if exact layout, headers, or tracked changes are important.',
+                    )
+                  }
+                >
+                  Formatting details
+                </button>
+              ) : null}
+              <span>
+                {d.type === 'html'
+                  ? `${content.length.toLocaleString()} characters`
+                  : `${wordCount.toLocaleString()} words`}{' '}
+                <i>·</i> {sizeOf(d.size)}
+              </span>
+            </div>
+          ) : (
+            <div className="reader-foot">
+              <span>
+                <BookOpen size={13} />
+                Reading view
+              </span>
+              <span>{sizeOf(d.size)}</span>
+            </div>
+          )}
         </>
+      )}
+      {discard && (
+        <Confirm
+          title="Discard unsaved changes?"
+          body="Your saved document will stay as it was. Cancel to keep editing or save your changes."
+          label="Discard and read"
+          onClose={() => askDiscard(false)}
+          onConfirm={read}
+        />
       )}
     </div>
   );

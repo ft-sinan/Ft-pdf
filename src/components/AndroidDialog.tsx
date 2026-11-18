@@ -27,10 +27,10 @@ export default function AndroidDialog({ close }: { close: () => void }) {
           Download Android APK
         </a>
         <div className="android-step">
-          <strong>Open the app and start editing</strong>
+          <strong>Open a document and start reading</strong>
           <p>
-            No server setup. Create PDFs, edit Word, text and HTML, and organize documents in a
-            library saved on your phone.
+            Scroll through PDFs, Word, text and HTML. Tap Edit when you need tools. Your library
+            stays on your phone.
           </p>
         </div>
         <div className="android-step">
