@@ -133,6 +133,7 @@ export function NewForm({
                   key={k}
                   type="button"
                   className={type === k ? 'selected' : ''}
+                  aria-label={kindNames[k]}
                   aria-pressed={type === k}
                   onClick={() => setType(k)}
                 >

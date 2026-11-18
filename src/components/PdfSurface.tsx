@@ -30,7 +30,7 @@ import {
   type PDFDocumentProxy,
   type RenderTask,
 } from 'pdfjs-dist';
-import workerURL from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import workerURL from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { Doc, readPdf, message } from '../types';
 import { Empty, ErrorNote, Modal, Spin } from './UI';
 GlobalWorkerOptions.workerSrc = workerURL;

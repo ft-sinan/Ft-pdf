@@ -93,6 +93,12 @@ public class OfflineStudioTest {
     ui.fill(".pdf-draft", "A report created with no network.");
     ui.button("Create PDF");
     ui.visible("canvas[aria-label='PDF page 1 of 1']");
+    ui.button("Text");
+    ui.await("ready to annotate", "q('.annotation-layer')?.style.pointerEvents==='auto'");
+    ui.touch(".pdf-sheet");
+    ui.fill(".pdf-text-field", "Reviewed offline");
+    ui.button("Place text");
+    ui.save();
     ui.button("PDF tools");
     ui.button("Add blank page");
     ui.button("Save PDF changes");

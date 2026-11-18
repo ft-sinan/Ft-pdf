@@ -12,13 +12,7 @@ export default defineConfig(({ mode }) => ({
         replacement: resolve(p + '/'),
       })),
       ...(mode === 'android'
-        ? [
-            { find: /^pdfjs-dist$/, replacement: resolve('pdfjs-dist/legacy/build/pdf.mjs') },
-            {
-              find: 'pdfjs-dist/build/pdf.worker.min.mjs',
-              replacement: resolve('pdfjs-dist/legacy/build/pdf.worker.min.mjs'),
-            },
-          ]
+        ? [{ find: /^pdfjs-dist$/, replacement: resolve('pdfjs-dist/legacy/build/pdf.mjs') }]
         : []),
     ],
   },

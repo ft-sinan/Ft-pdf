@@ -25,13 +25,15 @@ import pathlib,sys,re
 log=pathlib.Path(sys.argv[1]).read_text(errors='replace')
 errors=re.findall(r'(?:AssertionError|Exception|Error):[^\n]*(?:\n(?!\s+at |\s*at |Time:|Tests run:)[^\n]*){0,25}',log)
 extra='; '.join(line[-420:] for line in pathlib.Path(sys.argv[2]).read_text(errors='replace').splitlines() if 'CONSOLE(' in line)[-1200:]
-print('::error title=Installed APK test failed::'+('\n'.join(errors)[:2400] or log[-1700:]).replace('%','%25').replace('\r','').replace('\n','%0A')+' '+extra.replace('%','%25'))
+for err in (errors or [log[-1700:]])[:6]:
+    print('::error title=Installed APK test failed::'+(err[:250]+' ... '+err[-1400:] if len(err)>1800 else err).replace('%','%25').replace('\r','').replace('\n','%0A')+' '+extra.replace('%','%25'))
 PY
     exit 1
   fi
 }
 adb shell pm clear "$pkg"
 run_case "$pkg.LocalProfileTest#createProfileAndCollection" 1 first-launch
+adb exec-out run-as "$pkg" cat cache/first-launch.png > "$report/first-launch.png"
 adb shell am force-stop "$pkg"
 run_case "$pkg.LocalProfileTest#recoverProfileAndEnforceIsolation" 1 cold-restart
 adb shell pm clear "$pkg"

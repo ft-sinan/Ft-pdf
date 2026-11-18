@@ -22,6 +22,9 @@ public class LocalProfileTest {
   public void createProfileAndCollection() throws Exception {
     try (StudioScreen ui = new StudioScreen()) {
       ui.value(".profile-btn", "Alex Morgan");
+      androidx.test.uiautomator.UiDevice.getInstance(
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+      ).takeScreenshot(new java.io.File(ui.app.getCacheDir(), "first-launch.png"));
       assertEquals(
         "seeded sample files",
         12,
