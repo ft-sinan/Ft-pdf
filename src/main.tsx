@@ -1,8 +1,9 @@
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { onDevice } from './types';
 import './styles.css';
 createRoot(document.getElementById('root')!).render(<App />);
-if (window.isSecureContext && 'serviceWorker' in navigator)
+if (!onDevice && window.isSecureContext && 'serviceWorker' in navigator)
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {
       /* The workspace also runs without install support. */

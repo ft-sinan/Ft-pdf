@@ -1,9 +1,9 @@
 name: Android debug APK
 on:
   push:
-    paths: ['android/**', '.github/workflows/android-debug.yml']
+    paths: ['android/**', 'src/**', 'shared/**', 'server/**', 'public/fonts/**', 'public/icons/**', 'public/brand.svg', 'scripts/build-device.mjs', 'package*.json', 'index.html', '*config.ts', 'tsconfig.json', 'tests/fixtures/**', '.github/workflows/android-debug.yml']
   pull_request:
-    paths: ['android/**', '.github/workflows/android-debug.yml']
+    paths: ['android/**', 'src/**', 'shared/**', 'server/**', 'public/fonts/**', 'public/icons/**', 'public/brand.svg', 'scripts/build-device.mjs', 'package*.json', 'index.html', '*config.ts', 'tsconfig.json', 'tests/fixtures/**', '.github/workflows/android-debug.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,6 +14,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
       - uses: actions/setup-java@v5
         with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
@@ -22,14 +25,28 @@ jobs:
         run: test -f "$ANDROID_HOME/platforms/android-35/android.jar" && test -x "$ANDROID_HOME/build-tools/35.0.0/apksigner"
       - name: Test and assemble
         working-directory: android
-        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Check signature and record checksum
         run: |
           mkdir -p "$RUNNER_TEMP/ft-apk"
           cp android/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/ft-apk/ft-pdf-debug.apk"
           cd "$RUNNER_TEMP/ft-apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose ft-pdf-debug.apk
+          unzip -Z1 ft-pdf-debug.apk > entries.txt
+          grep -q '^assets/studio/index.html$' entries.txt
+          grep -q '^assets/seed/manifest.json$' entries.txt
+          grep -q '^assets/studio/assets/pdf.worker' entries.txt
+          grep -q '^assets/studio/assets/codec.worker' entries.txt
+          rm entries.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions ft-pdf-debug.apk > permissions.txt
+          if grep -q android.permission.INTERNET permissions.txt; then exit 1; fi
+          rm permissions.txt
           sha256sum ft-pdf-debug.apk | tee SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ft-instrumentation
+          path: android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          retention-days: 5
       - name: Upload installable APK
         id: apk
         uses: actions/upload-artifact@v4
@@ -41,35 +58,47 @@ jobs:
           compression-level: 0
       - name: Link artifact in run summary
         run: echo '[Download the debug APK artifact](${{ steps.apk.outputs.artifact-url }}). Extract the ZIP and install `ft-pdf-debug.apk`.' >> "$GITHUB_STEP_SUMMARY"
-  pdf-device-test:
-    name: Test PDF creation on Android
+  studio-device-test:
+    name: Test the installed studio offline
+    needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-java@v5
-        with: { distribution: temurin, java-version: '17' }
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/download-artifact@v4
+        with: { name: ft-pdf-debug-apk, path: '${{ runner.temp }}/device-apks' }
+      - uses: actions/download-artifact@v4
+        with: { name: ft-instrumentation, path: '${{ runner.temp }}/device-tests' }
+      - run: cp "$RUNNER_TEMP/device-tests/app-debug-androidTest.apk" "$RUNNER_TEMP/device-apks/test.apk"
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@v2
+        env:
+          APK_DIR: ${{ runner.temp }}/device-apks
         with:
-          api-level: 30
+          api-level: 35
           arch: x86_64
-          target: default
+          target: google_apis
           disable-animations: true
           working-directory: android
-          script: bash ci/check-pdf-on-device.sh
+          script: bash ci/check-studio-on-device.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-device-results
+          path: ${{ runner.temp }}/studio-device-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   # An explicit commit marker requests a direct APK link in addition to the normal Actions ZIP.
   # Only trusted pushes can publish, never PR builds. Never force-push or overwrite newer changes.
   publish-download:
     name: Publish verified APK to source branch
     if: github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-debug-apk]')
-    needs: [build, pdf-device-test]
+    needs: [build, studio-device-test]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

@@ -1,3 +1,4 @@
+export const onDevice = import.meta.env.MODE === 'android';
 export type Kind = 'pdf' | 'docx' | 'txt' | 'html';
 export type Theme = 'terracotta' | 'espresso' | 'forest' | 'midnight';
 export type Doc = {
@@ -80,6 +81,7 @@ export async function api<T>(
   body?: unknown,
   headers: Record<string, string> = {},
 ): Promise<T> {
+  if (onDevice) return (await import('./device/api')).deviceApi<T>(path, method, body, headers);
   const raw = body instanceof FormData || body instanceof Blob;
   const r = await fetch(`/api${path}`, {
     method,
@@ -107,7 +109,16 @@ export const message = (e: unknown) =>
     : e instanceof Error
       ? e.message
       : 'Something went wrong. Please try again.';
-export function downloadDoc(d: Doc) {
+export async function readPdf(d: Doc, revision: number, signal: AbortSignal) {
+  if (onDevice)
+    return (await import('./device/bridge')).privateRead(`/device-file/${d.id}/file`, signal);
+  return fetch(`${fileURL(d)}?v=${revision}`, { signal });
+}
+export async function downloadDoc(d: Doc) {
+  if (onDevice) {
+    await (await import('./device/bridge')).rpc('export', { id: d.id });
+    return;
+  }
   const a = document.createElement('a');
   a.href = fileURL(d);
   a.download = fileName(d);

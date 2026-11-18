@@ -1,8 +1,31 @@
 # Ft PDF
 
-An Android-ready document studio with an actual SQLite backend, private accounts, and editors that save and download real files. The first visit opens an isolated demo workspace with 12 documents, three collections, starred previews, and recent activity. No demo password or external service is needed.
+An offline Android document studio and a separate server-backed web edition. Both open to a working library with 12 example files, three collections, starred documents and a recent activity view.
 
-## Run the workspace
+## Android app
+
+**Install:** Download [**ft-pdf-debug.apk**](public/downloads/ft-pdf-debug.apk) or extract the `ft-pdf-debug-apk` artifact from a successful **Android debug APK** Actions run. Use Android 8.0+ with an updated Android System WebView (Chromium 105+). Open **Ft PDF**: the dashboard is the first screen. **No workspace address, network permission, subscription or server is required.**
+
+- **Create PDF:** Tap **New document → PDF**, give it a name, choose A4 or US Letter, and optionally add text. **Create PDF** saves it to your library and opens the editor. Text wraps across pages; an empty body gives one blank page. You can annotate it or organize its pages immediately.
+- **Open your files:** Tap **Import files → Choose files**, or use Android’s **Open with / Share → Ft PDF**. Confirm the import. A single file opens in its editor. Saving changes updates your private copy, not the original in Files.
+- **Keep a copy outside the app:** Use the editor’s download-arrow button (**Save a copy to Files**) and pick a destination. This exports the actual PDF, DOCX, TXT or HTML file. Export important work before clearing app data or uninstalling, including before replacing a previous debug build if Android reports a signing conflict.
+- **Accounts and collections:** Use the navigation drawer to create collections, see all files, change theme, or create/sign in to a local profile. Registering claims the current guest library. Sign-out switches to a separate guest library; signing back in restores your files. Profiles do **not** sync to a cloud account or another device.
+
+### Android build and verification
+
+With Node 22.13+, JDK 17 and Android SDK 35 installed:
+
+```sh
+npm ci
+cd android
+./gradlew :app:assembleDebug
+```
+
+The normal Gradle build includes the full editor UI, Word converter, PDF.js worker, fonts, CMaps and example documents. Output: `android/app/build/outputs/apk/debug/app-debug.apk`. App data uses private SQLite metadata and private document files. There is no Node runtime or loopback server inside the APK. The native message channel accepts only the bundled app origin and main frame; imported HTML previews have an opaque, script-disabled sandbox. Passwords use a salted PBKDF2 hash. As with other debug apps, do not rely on debug signing or local profiles as a defense against someone with privileged access to the device.
+
+The GitHub Actions workflow assembles and signs the debug APK, checks its assets, permissions and signature, and installs **that exact artifact** on an Android 15 emulator with airplane mode enabled. Instrumentation exercises first launch, profile persistence across process death, account isolation, collections, the editors, genuine legacy Word input, the Android Files picker, exports, and PDF rendering. A trusted push marked `[publish-debug-apk]` publishes the tested APK and SHA-256 checksum on the same branch only after both jobs pass. No signing keys are stored in Git.
+
+## Run the separate web workspace
 
 Use **Node.js 22.13 or newer** (Node 22 LTS recommended).
 
@@ -29,31 +52,6 @@ docker run --rm -p 8080:8080 -v ft-pdf-data:/app/data ft-pdf
 
 Use a persistent volume, not an ephemeral deployment filesystem. Back up SQLite using its backup facility or a consistent snapshot including the WAL. `/api/health` is a lightweight health check that does not create a demo account.
 
-## Android
-
-### Install the client
-
-Download [**ft-pdf-debug.apk**](public/downloads/ft-pdf-debug.apk) from this branch, or get the **ft-pdf-debug-apk** artifact from a successful **Android debug APK** run in GitHub Actions. Extract the ZIP and install `ft-pdf-debug.apk` (Android 8.0+). The workspace sidebar also links to the downloadable APK.
-
-**Create a PDF without hosting:** launch Ft PDF → **Create PDF** → enter a document title, choose A4 or US Letter, and write/paste text → **Save PDF…**. Choose the destination in Android Files. Text wraps and paginates on-device; leaving the body empty creates a single blank page. You can open the saved file in a PDF reader. No account, internet connection, or workspace URL is required for this flow. Cancelling the picker keeps your draft.
-
-**Optional online workspace:** connect a reachable Ft PDF server to use the account, shared library, and document editors. The APK does not embed the Node server. With a configured server it supports the system file picker, **Open with Ft PDF**, sharing documents into the workspace, and **Save as**. Incoming uploads require confirmation. No unrestricted storage access or JavaScript-to-native bridge is needed.
-
-### Build from source
-
-Open `android/` in Android Studio with JDK 17 and Android SDK 35, or run:
-
-```sh
-cd android
-./gradlew :app:assembleDebug
-# Optional: preconfigure the initial workspace address
-./gradlew :app:assembleDebug -PftWorkspaceUrl=https://your-ft-pdf-server.example
-```
-
-Output: `android/app/build/outputs/apk/debug/app-debug.apk`. The debug variant also accepts HTTP for local development. From the Android emulator, use `http://10.0.2.2:5173` to reach the host's development server. **Do not use localhost on a physical phone**; use a reachable HTTPS deployment. Release builds require HTTPS. Use your own release-signing process for distribution; no signing credentials are stored in this repository.
-
-The `Android debug APK` workflow builds with JDK 17 and SDK 35 on Android source changes. It runs unit tests, verifies the APK signature with `apksigner`, and publishes the APK and `SHA256SUMS.txt` in the run’s artifacts for 30 days. A separate emulator job creates and renders blank A4 and multipage Unicode Letter PDFs. A source push explicitly marked `[publish-debug-apk]` also publishes the verified binary and checksum under `public/downloads/` on that same branch if both jobs pass; ordinary pushes and PRs only upload Actions artifacts. No signing secrets are required. Debug signatures may differ between builds: if Android rejects an update because of a signature conflict, save any work before uninstalling the previous debug build. Files exported via Android Files are separate from app-private settings.
-
 ### Install without an APK
 
 Open the HTTPS workspace in Android Chrome and use **Install app** or **Add to Home screen**. The PWA includes install icons, shortcuts, file handlers where the browser supports them, and an Android share target. The service worker caches public assets only for normal browsing; shared files are temporarily staged until handed to the import dialog. Private documents and session responses are not cached for offline browsing. Reading and saving workspace documents require connectivity.
@@ -72,7 +70,7 @@ PDF editing is annotation, form, and page editing—not OCR, secure redaction, o
 
 ## Workspace features
 
-- **Account isolation:** first visit creates a private demo. **Profile → Create account** claims that workspace, including any edits. Signing into an existing account switches workspaces. Signing out opens a new demo, never another account’s data.
+- **Account isolation:** first visit creates a private demo. **Profile → Create account** claims that workspace, including any edits. Signing into an existing account switches workspaces. Signing out opens a separate guest workspace, never another account’s data.
 - **Document lifecycle:** create, multi-file import, open, edit, rename, star, move, download, trash, undo, restore, and permanent deletion. Deleting a collection keeps its documents.
 - **Navigation:** responsive sidebar/drawer, searchable document picker (`Ctrl/Cmd K`), recent files, starred cards, collections, file type filters, sort, grid/list views, and activity history.
 - **Preferences:** Terracotta, Espresso, Forest, and Midnight palettes, plus editable display names. Themes persist per account.
@@ -83,7 +81,8 @@ PDF editing is annotation, form, and page editing—not OCR, secure redaction, o
 
 - `src/`: React, TypeScript, Vite, local DM Sans fonts, Lucide icons, and original vector artwork. Heavy PDF editing libraries load on demand.
 - `server/`: Express API, SQLite via `node:sqlite`, per-user authorization, session rotation, scrypt password hashing, HTTP-only cookies, validated uploads, and real format conversion.
-- `android/`: native Java Android host with document intents, authenticated imports/downloads, and a configurable workspace origin.
+- `android/`: Android SQLite library, scoped message bridge, native PDF creation, file intents, and system-picker integration.
+- `src/device/`, `scripts/build-device.mjs`, `shared/`: on-device editor adapter, bundled format workers, real demo asset generation and shared Word writer.
 - `public/`: PWA, icons, annotation font/license, and the Android client download.
 - `tests/`: API, persistence, file interoperability, and browser interaction tests. Tests use isolated in-memory or temporary databases.
 

@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import {
   api,
+  onDevice,
   ago,
   Collection,
   Doc,
@@ -222,23 +223,47 @@ export default function App() {
     };
   }, [drawer]);
   useEffect(() => {
-    const imported = (e: Event) => {
-      const { id, count } = (e as CustomEvent<{ id: string; count: number }>).detail;
-      void api<Workspace>('/workspace')
-        .then((next) => {
-          setW(next);
-          notify(`${count} ${count === 1 ? 'file' : 'files'} imported from Android`);
-          if (!dirty.current && next.documents.some((d) => d.id === id))
-            location.hash = count === 1 ? `/documents/edit/${id}` : '/documents';
-        })
-        .catch((e) => notify(message(e), true));
+    if (!onDevice || !w || dialog) return;
+    let live = true,
+      busy = false,
+      again = false;
+    const drain = async () => {
+      if (busy) {
+        again = true;
+        return;
+      }
+      busy = true;
+      try {
+        const { receiveFiles } = await import('./device/inbox');
+        const result = await receiveFiles();
+        if (!live) return;
+        await result.ack();
+        if (!live) return;
+        if (result.errors.length) notify(result.errors.join(' '), true);
+        if (result.files.length) {
+          setIncoming(result.files);
+          setDialog({ kind: 'import' });
+        }
+      } catch (e) {
+        if (live) notify(message(e), true);
+      } finally {
+        busy = false;
+        if (live && again) {
+          again = false;
+          void drain();
+        }
+      }
     };
-    window.addEventListener('ft:imported', imported);
-    return () => window.removeEventListener('ft:imported', imported);
-  }, [notify]);
+    void drain();
+    window.addEventListener('ft:inbox', drain);
+    return () => {
+      live = false;
+      window.removeEventListener('ft:inbox', drain);
+    };
+  }, [w?.user.id, dialog, notify]);
   // Installed applications can open files directly with the OS file picker.
   useEffect(() => {
-    if (!w) return;
+    if (onDevice || !w) return;
     const queue = (
       window as unknown as {
         launchQueue?: { setConsumer: (fn: (p: { files: FileSystemFileHandle[] }) => void) => void };
@@ -253,7 +278,7 @@ export default function App() {
     });
   }, [w?.user.id]);
   useEffect(() => {
-    if (!w || !('caches' in window)) return;
+    if (onDevice || !w || !('caches' in window)) return;
     const url = new URL(location.href);
     if (!url.searchParams.has('shared')) return;
     let live = true;
@@ -572,14 +597,16 @@ export default function App() {
                   <strong>{sizeOf(used)}</strong> of {Math.round(w.quota / 1048576)} MB used
                 </p>
               </div>
-              <button
-                className="settings-link android-link"
-                onClick={() => modal({ kind: 'android' })}
-              >
-                <Smartphone size={17} />
-                Android app
-                <ArrowUpRight size={13} />
-              </button>
+              {!onDevice && (
+                <button
+                  className="settings-link android-link"
+                  onClick={() => modal({ kind: 'android' })}
+                >
+                  <Smartphone size={17} />
+                  Android app
+                  <ArrowUpRight size={13} />
+                </button>
+              )}
               <button className="settings-link" onClick={() => modal({ kind: 'settings' })}>
                 <Settings2 size={17} />
                 Settings
@@ -642,7 +669,9 @@ export default function App() {
                   <div className="eyebrow intro-eyebrow">
                     <i />
                     {view === 'overview'
-                      ? 'PERSONAL WORKSPACE'
+                      ? onDevice
+                        ? 'ON THIS DEVICE'
+                        : 'PERSONAL WORKSPACE'
                       : isC
                         ? 'COLLECTION'
                         : 'DOCUMENT LIBRARY'}
@@ -817,7 +846,11 @@ export default function App() {
                     {popAct(d.starred ? 'Remove from starred' : 'Add to starred', <Star />, () =>
                       star(d),
                     )}
-                    {popAct('Download file', <Download />, () => downloadDoc(d))}
+                    {popAct(
+                      onDevice ? 'Save a copy to Files' : 'Download file',
+                      <Download />,
+                      () => void downloadDoc(d).catch((e) => notify(message(e), true)),
+                    )}
                     <hr />
                     {popAct('Move to Trash', <Trash2 />, () => trash(d), true)}
                   </>
@@ -893,8 +926,8 @@ export default function App() {
           initialFiles={incoming}
           onClose={close}
           onFile={upsert}
-          onDone={(n, c) => {
-            nav(c ? `collection/${c}` : 'documents');
+          onDone={(n, c, only) => {
+            nav(c ? `collection/${c}` : 'documents', onDevice && n === 1 ? only?.id : undefined);
             notify(`${n} ${n === 1 ? 'file' : 'files'} imported`);
           }}
         />
@@ -969,13 +1002,7 @@ export default function App() {
           }}
         />
       )}
-      {dialog?.kind === 'android' && (
-        <AndroidDialog
-          close={close}
-          isDemo={w.user.isDemo}
-          register={() => modal({ kind: 'register' })}
-        />
-      )}
+      {dialog?.kind === 'android' && <AndroidDialog close={close} />}
       {dialog?.kind === 'settings' && (
         <Settings
           user={w.user}

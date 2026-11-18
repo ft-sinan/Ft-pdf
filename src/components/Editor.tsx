@@ -15,7 +15,17 @@ import {
   Underline,
   Undo2,
 } from 'lucide-react';
-import { api, Collection, Doc, downloadDoc, fileName, labels, message, sizeOf } from '../types';
+import {
+  api,
+  onDevice,
+  Collection,
+  Doc,
+  downloadDoc,
+  fileName,
+  labels,
+  message,
+  sizeOf,
+} from '../types';
 import { FileIcon } from './Art';
 import { Empty, ErrorNote, Spin } from './UI';
 import type { PdfHandle } from './PdfSurface';
@@ -133,7 +143,7 @@ export default function Editor({
   const save = async (download = false) => {
     if (saving.current || !ready) return;
     if (!dirty) {
-      if (download) downloadDoc(d);
+      if (download) await downloadDoc(d).catch((e) => setSaveErr(message(e)));
       return;
     }
     saving.current = true;
@@ -150,7 +160,7 @@ export default function Editor({
       onDirty(false);
       onSaved(saved);
       if (d.type === 'pdf') setRev((n) => n + 1);
-      if (download) downloadDoc(saved);
+      if (download) await downloadDoc(saved);
     } catch (e) {
       setSaveErr(message(e));
     } finally {
@@ -207,8 +217,14 @@ export default function Editor({
           <button
             className="btn secondary download-btn"
             disabled={!ready || busy}
-            aria-label="Download document"
-            title={dirty ? 'Save and download' : 'Download document'}
+            aria-label={onDevice ? 'Save a copy to Files' : 'Download document'}
+            title={
+              onDevice
+                ? 'Save a copy to Android Files'
+                : dirty
+                  ? 'Save and download'
+                  : 'Download document'
+            }
             onClick={() => void save(true)}
           >
             <Download size={16} />

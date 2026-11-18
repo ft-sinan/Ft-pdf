@@ -31,7 +31,7 @@ import {
   type RenderTask,
 } from 'pdfjs-dist';
 import workerURL from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { Doc, fileURL, message } from '../types';
+import { Doc, readPdf, message } from '../types';
 import { Empty, ErrorNote, Modal, Spin } from './UI';
 GlobalWorkerOptions.workerSrc = workerURL;
 const PdfTools = lazy(() => import('./PdfTools'));
@@ -137,7 +137,7 @@ const PdfSurface = forwardRef<
     onReady(false);
     setPw(null);
     (async () => {
-      const r = await fetch(`${fileURL(d)}?v=${revision}`, { signal: abort.signal });
+      const r = await readPdf(d, revision, abort.signal);
       if (!r.ok) throw new Error('The PDF could not be loaded.');
       const bytes = new Uint8Array(await r.arrayBuffer());
       if (!live) return;
@@ -265,17 +265,15 @@ const PdfSurface = forwardRef<
         const a = m.points[0],
           next = conv({ x: a.x + 1, y: a.y });
         const angle = (Math.atan2(next.y - pts[0].y, next.x - pts[0].x) * 180) / Math.PI;
-        (m.text || '')
-          .split('\n')
-          .forEach((line, i) =>
-            target.drawText(line, {
-              ...conv({ x: a.x, y: a.y + i * m.size * 1.25 }),
-              font,
-              size: m.size,
-              color: ink,
-              rotate: degrees(angle),
-            }),
-          );
+        (m.text || '').split('\n').forEach((line, i) =>
+          target.drawText(line, {
+            ...conv({ x: a.x, y: a.y + i * m.size * 1.25 }),
+            font,
+            size: m.size,
+            color: ink,
+            rotate: degrees(angle),
+          }),
+        );
       } else if (m.type === 'highlight') {
         const a = pts[0],
           b = pts.at(-1)!;

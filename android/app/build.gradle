@@ -6,19 +6,33 @@ android {
         applicationId 'studio.ftpdf.app'
         minSdk 26
         targetSdk 35
-        versionCode 2
-        versionName '1.1'
+        versionCode 3
+        versionName '2.0'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
-        // Optional online workspace. Local PDF creation never uses this URL.
-        resValue 'string', 'default_workspace_url', providers.gradleProperty('ftWorkspaceUrl').getOrElse('')
     }
     buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/ftAssets'))
+    sourceSets.androidTest.assets.srcDir(rootProject.file('../tests/fixtures'))
 }
 
+// A normal Gradle/Studio build must never produce a launcher without its editors.
+final repo = rootProject.projectDir.parentFile
+final studio = tasks.register('bundleDeviceStudio', Exec) {
+    workingDir repo
+    commandLine 'npm', 'run', 'build:device'
+    inputs.files(fileTree(repo) {
+        include 'scripts/build-device.mjs', 'package*.json', 'vite.config.ts', 'tsconfig.json', 'index.html', 'src/**', 'shared/**', 'server/**', 'public/brand.svg', 'public/fonts/**', 'public/icons/**'
+    })
+    outputs.dir(layout.buildDirectory.dir('generated/ftAssets'))
+}
+tasks.named('preBuild').configure { dependsOn(studio) }
 
 dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.3.0'
 }

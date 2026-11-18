@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import {
   api,
+  onDevice,
   Collection,
   Doc,
   fileName,
@@ -91,6 +92,8 @@ export function NewForm({
 }) {
   const [name, setName] = useState(''),
     [type, setType] = useState<Kind>('pdf'),
+    [paper, setPaper] = useState('a4'),
+    [text, setText] = useState(''),
     [c, setC] = useState(initial),
     [busy, setBusy] = useState(false),
     [err, setErr] = useState('');
@@ -107,7 +110,14 @@ export function NewForm({
           setBusy(true);
           setErr('');
           try {
-            onDone(await api<Doc>('/documents', 'POST', { name, type, collectionId: c || null }));
+            onDone(
+              await api<Doc>('/documents', 'POST', {
+                name,
+                type,
+                collectionId: c || null,
+                ...(onDevice && type === 'pdf' ? { paper, text } : {}),
+              }),
+            );
           } catch (e) {
             setErr(message(e));
             setBusy(false);
@@ -137,7 +147,7 @@ export function NewForm({
             <div className="input-affix">
               <input
                 required
-                maxLength={140}
+                maxLength={onDevice && type === 'pdf' ? 120 : 140}
                 placeholder="Untitled document"
                 autoComplete="off"
                 value={name}
@@ -146,10 +156,37 @@ export function NewForm({
               <span>.{type}</span>
             </div>
           </label>
+          {onDevice && type === 'pdf' && (
+            <>
+              <label className="field">
+                Page size
+                <select value={paper} onChange={(e) => setPaper(e.target.value)}>
+                  <option value="a4">A4</option>
+                  <option value="letter">US Letter</option>
+                </select>
+              </label>
+              <label className="field">
+                Page text{' '}
+                <textarea
+                  className="pdf-draft"
+                  placeholder="Start with text, or leave blank"
+                  maxLength={50000}
+                  rows={3}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                />
+              </label>
+            </>
+          )}
           <CollectionField collections={collections} value={c} set={setC} />
           <ErrorNote text={err} />
         </div>
-        <Footer close={onClose} busy={busy} label="Create document" icon={<Plus size={16} />} />
+        <Footer
+          close={onClose}
+          busy={busy}
+          label={onDevice && type === 'pdf' ? 'Create PDF' : 'Create document'}
+          icon={<Plus size={16} />}
+        />
       </form>
     </Modal>
   );
@@ -168,7 +205,7 @@ export function ImportForm({
   initialFiles: File[];
   onClose: () => void;
   onFile: (d: Doc) => void;
-  onDone: (n: number, c: string) => void;
+  onDone: (n: number, c: string, only?: Doc) => void;
 }) {
   const [files, setFiles] = useState<File[]>(initialFiles),
     [c, setC] = useState(initial),
@@ -177,7 +214,8 @@ export function ImportForm({
     [err, setErr] = useState(''),
     [drag, setDrag] = useState(false),
     input = useRef<HTMLInputElement>(null),
-    total = useRef(0);
+    total = useRef(0),
+    last = useRef<Doc | undefined>(undefined);
   const add = (arr: File[]) => {
     if (busy) return;
     const good = arr.filter(
@@ -210,7 +248,8 @@ export function ImportForm({
         body.append('file', f);
         body.append('name', f.name);
         body.append('collectionId', c);
-        onFile(await api<Doc>('/documents/import', 'POST', body));
+        last.current = await api<Doc>('/documents/import', 'POST', body);
+        onFile(last.current);
         total.current++;
       } catch (e) {
         failed.push(f);
@@ -219,7 +258,7 @@ export function ImportForm({
       setDone((x) => x + 1);
     }
     setBusy(false);
-    if (!failed.length) onDone(total.current, c);
+    if (!failed.length) onDone(total.current, c, last.current);
     else {
       setFiles(failed);
       setErr(errors.join(' '));
@@ -537,9 +576,13 @@ export function AuthForm({
       kicker="FT PDF ACCOUNT"
       title={mode === 'register' ? 'Make this workspace yours' : 'Welcome back'}
       subtitle={
-        mode === 'register'
-          ? 'Create an account to keep this workspace and access it on your other devices.'
-          : 'Sign in to your personal document workspace.'
+        onDevice
+          ? mode === 'register'
+            ? 'Keep this library in a password-protected profile on this device. No cloud sync.'
+            : 'Sign in to a profile saved on this device.'
+          : mode === 'register'
+            ? 'Create an account to keep this workspace and access it on your other devices.'
+            : 'Sign in to your personal document workspace.'
       }
       onClose={() => !busy && onClose()}
     >
@@ -722,7 +765,12 @@ export function Settings({
               </span>
               <div>
                 <strong>{user.isDemo ? 'Demo workspace' : 'Personal account'}</strong>
-                <p>{user.email || 'Create an account to sync across devices.'}</p>
+                <p>
+                  {user.email ||
+                    (onDevice
+                      ? 'Create a profile on this device.'
+                      : 'Create an account to sync across devices.')}
+                </p>
               </div>
             </div>
             <form
@@ -751,10 +799,11 @@ export function Settings({
             </button>
           </>
         )}
-        {navigator.userAgent.includes('FtPDF-Android') && (
-          <button className="text-btn" onClick={() => location.assign('ftpdf://settings')}>
-            Android workspace address <ArrowRight size={14} />
-          </button>
+        {onDevice && (
+          <p className="pwa-tip">
+            <strong>On this device.</strong> Files and accounts stay on this phone. Save a copy to
+            Android Files to back it up.
+          </p>
         )}
         <ErrorNote text={err} />
       </div>
