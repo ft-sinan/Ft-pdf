@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries><package android:name="studio.ftpdf.app"/></queries>
+    <application android:label="Update test driver" android:allowBackup="false">
+        <!-- Inert HOME on the disposable CI emulator; this APK never ships. -->
+        <activity android:name=".IdleHome" android:exported="true" android:excludeFromRecents="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter>
+        </activity>
+    </application>
+</manifest>

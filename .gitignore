@@ -21,3 +21,10 @@ test-results/
 *.jks
 *.keystore
 *.p12
+*.pfx
+*.pkcs12
+*.key
+keystore.properties
+key.properties
+
+__pycache__/

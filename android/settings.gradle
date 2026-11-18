@@ -2,3 +2,6 @@ pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal()
 dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
 rootProject.name = 'Ft PDF'
 include ':app'
+
+// Independent black-box test driver, never a dependency of :app.
+include ':updateProbe'

@@ -1,4 +1,10 @@
 plugins { id 'com.android.application' }
+
+final productionVersion = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json')).version
+final productionCode = 9
+// A lower-code, release-mode fixture for testing the first production update.
+// It is never a release candidate; the publication gate rejects its version name.
+final upgradeFixture = providers.gradleProperty('ftUpgradeFixture').orNull == 'true'
 android {
     namespace 'studio.ftpdf.app'
     compileSdk 35
@@ -6,9 +12,17 @@ android {
         applicationId 'studio.ftpdf.app'
         minSdk 26
         targetSdk 35
-        versionCode 8
-        versionName(new groovy.json.JsonSlurper().parse(rootProject.file('../package.json')).version)
+        versionCode(upgradeFixture ? productionCode - 1 : productionCode)
+        versionName(upgradeFixture ? "${productionVersion}-upgrade-fixture" : productionVersion)
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    buildTypes {
+        release {
+            debuggable false
+            jniDebuggable false
+            // Signing is deliberately separate: Gradle/npm never receive the release key.
+            signingConfig null
+        }
     }
     buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
