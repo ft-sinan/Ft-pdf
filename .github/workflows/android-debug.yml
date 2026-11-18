@@ -41,7 +41,19 @@ jobs:
           fi
       - name: Test and assemble
         working-directory: android
-        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+        run: |
+          set -o pipefail
+          if ! ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest 2>&1 | tee "$RUNNER_TEMP/android-build.log"; then
+            python3 - "$RUNNER_TEMP/android-build.log" <<'PYERROR'
+          import pathlib,re,sys
+          text=pathlib.Path(sys.argv[1]).read_text(errors='replace')
+          failure=text.partition('* What went wrong:')[2].partition('* Try:')[0].strip()
+          details='\n'.join(re.findall(r'(?m)^.{0,260}(?:error:|failed to resolve|could not download).{0,450}$',text,re.I)[-4:])
+          reason=(details+'\n'+(failure or text[-1400:])).strip()
+          print('::error title=Android build::'+reason[:1800].replace('%','%25').replace('\r','').replace('\n','%0A'))
+          PYERROR
+            exit 1
+          fi
       - name: Check the bundled offline tool outputs
         run: |
           # Hosted ubuntu-24.04 includes Chrome. Test our APK assets, without a second browser download.
