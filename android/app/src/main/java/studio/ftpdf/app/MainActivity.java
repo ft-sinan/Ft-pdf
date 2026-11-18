@@ -53,6 +53,18 @@ public class MainActivity extends Activity {
   private java.util.function.BiConsumer<Boolean, String> exportReply;
   private ValueCallback<Uri[]> picker;
   private java.util.function.Consumer<Boolean> cameraReply;
+  private boolean resumed, cameraResultPending;
+
+  private void replyAfterPermissionDialog() {
+    // Android may deliver the result *before* onResume. Send it to the same
+    // renderer only after web.onResume(), not to a paused permission request.
+    if (!resumed || !cameraResultPending || cameraReply == null) return;
+    java.util.function.Consumer<Boolean> answer = cameraReply;
+    cameraReply = null;
+    cameraResultPending = false;
+    answer.accept(cameraAllowed() && localCameraPage());
+  }
+
   private Uri captureUri;
   private File captureFile;
 
@@ -809,9 +821,8 @@ public class MainActivity extends Activity {
   public void onRequestPermissionsResult(int code, String[] perms, int[] grants) {
     super.onRequestPermissionsResult(code, perms, grants);
     if (code == LIVE_PERMISSION && cameraReply != null) {
-      java.util.function.Consumer<Boolean> answer = cameraReply;
-      cameraReply = null;
-      answer.accept(cameraAllowed() && localCameraPage());
+      cameraResultPending = true;
+      replyAfterPermissionDialog();
     }
     if (code == PHOTO_PERMISSION && picker != null) {
       if (cameraAllowed() && localCameraPage()) startPhoto();
@@ -905,6 +916,7 @@ public class MainActivity extends Activity {
   @Override
   protected void onPause() {
     // Pause this renderer, never global WebView timers: another Ft PDF activity may be reading.
+    resumed = false;
     if (web != null) web.onPause();
     super.onPause();
   }
@@ -913,6 +925,8 @@ public class MainActivity extends Activity {
   protected void onResume() {
     super.onResume();
     if (web != null) web.onResume();
+    resumed = true;
+    replyAfterPermissionDialog();
     if (web != null && !externalReader()) web.evaluateJavascript(
       "window.dispatchEvent(new Event('ft:resume'))",
       null

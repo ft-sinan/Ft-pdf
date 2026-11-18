@@ -30,17 +30,34 @@ public class ScannerTest {
   public void denyingCameraKeepsTheLibraryUsable() throws Exception {
     try (StudioScreen ui = new StudioScreen()) {
       int before = documents();
-      ui.button("Scan document");
-      UiObject2 deny = os.wait(
-        Until.findObject(By.res(Pattern.compile(".*:id/permission_deny_button"))),
-        10000
-      );
-      if (deny == null) deny = os.wait(
-        Until.findObject(By.text(Pattern.compile("(?i)^don.t allow$"))),
-        2000
-      );
-      assertNotNull("Android requested only camera permission", deny);
+      ui.touch("[aria-label='Scan document']");
+      BySelector denyButton = By.res(Pattern.compile(".*:id/permission_deny_button"));
+      UiObject2 deny = os.wait(Until.findObject(denyButton), 10000);
+      if (deny == null) {
+        denyButton = By.text(Pattern.compile("(?i)^don.t allow$"));
+        deny = os.wait(Until.findObject(denyButton), 2000);
+      }
+      assertNotNull("Android camera permission dialog", deny);
+      // A newly opened system permission button can be visible while Android
+      // still ignores early taps. Confirm dismissal; only ever retry that same Deny button.
+      os.waitForIdle(1000);
       deny.click();
+      if (!os.wait(Until.gone(denyButton), 1800)) {
+        UiObject2 stillOpen = os.findObject(denyButton);
+        if (stillOpen != null) stillOpen.click();
+      }
+      assertTrue(
+        "System permission prompt closed after choosing Deny",
+        os.wait(Until.gone(denyButton), 7000)
+      );
+      assertEquals(
+        PackageManager.PERMISSION_DENIED,
+        TestFiles.app.checkSelfPermission(Manifest.permission.CAMERA)
+      );
+      assertTrue(
+        "Studio visible after permission dialog; foreground=" + os.getCurrentPackageName(),
+        os.wait(Until.hasObject(By.pkg(TestFiles.app.getPackageName())), 10000)
+      );
       ui.value(".scan-live", "Camera access is off");
       ui.button("Cancel");
       ui.button("Images to PDF");
