@@ -9,7 +9,7 @@
   align-items: center;
   gap: 14px;
 }
-.maker-coin {
+.creator-mark {
   display: grid;
   place-items: center;
   width: 52px;
@@ -23,16 +23,8 @@
     italic 32px Georgia,
     serif;
 }
-.maker-coin[aria-pressed='true'] svg {
-  animation: seal-turn 0.22s ease-out;
-}
-@keyframes seal-turn {
-  from {
-    transform: rotateY(80deg);
-  }
-  to {
-    transform: rotateY(0);
-  }
+.creator-mark[aria-expanded='true'] {
+  border-color: var(--accent);
 }
 .maker-kicker,
 .maker-stats dt {
@@ -167,9 +159,4 @@
 }
 .copy-feedback {
   overflow-wrap: anywhere;
-}
-@media (prefers-reduced-motion: reduce) {
-  .maker-coin[aria-pressed='true'] svg {
-    animation: none;
-  }
 }

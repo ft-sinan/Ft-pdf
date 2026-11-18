@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ArrowUpRight,
   BookOpen,
@@ -121,14 +121,9 @@ function Contact({
 }
 /** A local Settings panel; contact URLs are the same allowlist used by Android. */
 export default function CreatorSpace() {
-  const [flipped, flip] = useState(false),
+  const [about, setAbout] = useState(false),
     [badge, select] = useState<number | null>(null),
     [feedback, say] = useState('');
-  useEffect(() => {
-    if (!flipped) return;
-    const timer = setTimeout(() => flip(false), 2400);
-    return () => clearTimeout(timer);
-  }, [flipped]);
   const copy = async (item: (typeof contacts)[number]) => {
     const ok = await copyText(item.contact).catch(() => false);
     say(ok ? `${item.label} contact copied.` : `Copy this contact: ${item.contact}`);
@@ -137,21 +132,23 @@ export default function CreatorSpace() {
     <section className="creator-space" aria-label="Creator Space">
       <div className="maker-card">
         <button
-          className="maker-coin"
-          aria-label="Flip creator emblem"
-          aria-pressed={flipped}
-          onClick={() => flip((v) => !v)}
+          className="creator-mark"
+          aria-label="About Ft PDF"
+          aria-controls="creator-note"
+          aria-expanded={about}
+          onClick={() => setAbout((v) => !v)}
         >
-          {flipped ? <BookOpen size={22} /> : <span>S</span>}
+          S
         </button>
         <div>
           <p className="maker-kicker">Creator Space</p>
-          <h3>{flipped ? 'Read first.' : 'Made by Sinan'}</h3>
-          <p className="maker-handle">{flipped ? 'Edit when you’re ready.' : '@ft-sinan'}</p>
+          <h3>Made by Sinan</h3>
+          <p className="maker-handle">@ft-sinan</p>
         </div>
       </div>
-      <p className="maker-note">
-        Ft PDF is a place to read your documents and edit a copy when you need one.
+      <p className="maker-note" id="creator-note" hidden={!about}>
+        Read first. If you edit a document opened from Files, Ft PDF saves a library copy and leaves
+        the original alone.
       </p>
       <div className="maker-badges" aria-label="About the studio">
         {badges.map(({ name, icon: I }, i) => (

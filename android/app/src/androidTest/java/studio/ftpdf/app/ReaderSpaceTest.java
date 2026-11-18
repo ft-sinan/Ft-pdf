@@ -46,10 +46,13 @@ public class ReaderSpaceTest {
       if ("true".equals(ui.js("!!btn('Open navigation')"))) ui.button("Open navigation");
       ui.button("Settings");
       ui.button("Creator Space");
-      ui.value(".maker-card h3", "Sinan");
-      ui.button("Flip creator emblem");
-      ui.value(".maker-card h3", "Read first.");
-      ui.value(".maker-card h3", "Sinan");
+      ui.value(".maker-card h3", "Made by Sinan");
+      ui.button("About Ft PDF");
+      ui.visible("#creator-note:not([hidden])");
+      ui.value("#creator-note", "Read first.");
+      ui.button("About Ft PDF");
+      ui.await("studio note collapses on a second tap", "!!q('#creator-note[hidden]')");
+      ui.value(".maker-card h3", "Made by Sinan");
       ui.button("Offline");
       ui.value(".badge-detail", "airplane mode");
       ui.value(".maker-stats", BuildConfig.VERSION_NAME);

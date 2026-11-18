@@ -286,7 +286,7 @@ test('PDF reader scrolls long mixed-size files without mounting every page', asy
   await page.reload();
   await reader(page);
 });
-test('Creator Space credits Sinan and provides the flip, badge details and contact card', async ({
+test('Creator Space credits Sinan and keeps the maker credit, studio details and contacts in Settings', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 360, height: 740 });
@@ -295,8 +295,12 @@ test('Creator Space credits Sinan and provides the flip, badge details and conta
   await page.getByRole('button', { name: 'Creator Space', exact: true }).click();
   const card = page.getByRole('region', { name: 'Creator Space' });
   await expect(card.getByRole('heading', { name: 'Made by Sinan', exact: true })).toBeVisible();
-  await card.getByRole('button', { name: 'Flip creator emblem' }).click();
-  await expect(card.getByRole('heading', { name: 'Read first.' })).toBeVisible();
+  const mark = card.getByRole('button', { name: 'About Ft PDF' });
+  await mark.click();
+  await expect(card.locator('#creator-note')).toBeVisible();
+  await expect(mark).toHaveAttribute('aria-expanded', 'true');
+  await mark.click();
+  await expect(card.locator('#creator-note')).toBeHidden();
   await expect(card.getByRole('heading', { name: 'Made by Sinan', exact: true })).toBeVisible();
   await card.getByRole('button', { name: 'Web edition', exact: true }).click();
   await expect(card.locator('.badge-detail')).toContainText('workspace server');
