@@ -169,9 +169,11 @@ public final class MainActivity extends Activity {
               else if (t.contains("/") && !t.equals("*/*")) types.add(t);
             }
           if (types.isEmpty()) types.addAll(Arrays.asList(TYPES));
+          boolean imagesOnly =
+            !types.isEmpty() && types.stream().allMatch(t -> t.startsWith("image/"));
           Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
-            .setType(types.size() == 1 ? types.get(0) : "*/*")
+            .setType(types.size() == 1 ? types.get(0) : imagesOnly ? "image/*" : "*/*")
             .putExtra(Intent.EXTRA_LOCAL_ONLY, true)
             .putExtra(Intent.EXTRA_MIME_TYPES, types.toArray(new String[0]))
             .putExtra(

@@ -82,6 +82,15 @@ final class StudioScreen implements AutoCloseable {
   void touch(String selector) throws Exception {
     visible(selector);
     js("q(" + str(selector) + ").scrollIntoView({block:'center'})");
+    // Tapping a moving rectangle can hit the underlying sheet during modal/IME
+    // transitions. Wait for the visible center to be stable and actually hit-testable.
+    js("window.__ftTouchSample=null");
+    await(
+      "stable touch target " + selector,
+      "(()=>{const e=q(" +
+        str(selector) +
+        ");if(!e)return false;const r=e.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;if(!e.contains(document.elementFromPoint(x,y)))return false;const p=window.__ftTouchSample,t=performance.now();if(!p||Math.abs(x-p.x)>1||Math.abs(y-p.y)>1){window.__ftTouchSample={x,y,t};return false}return t-p.t>250})()"
+    );
     org.json.JSONArray bounds = new org.json.JSONArray(
       js(
         "(()=>{let r=q(" +

@@ -26,9 +26,26 @@ public class PhoneToolsTest {
   final UiDevice os = UiDevice.getInstance(inst);
   static String text = "[aria-label='Plain text content']";
 
+  private String nativeScreen() {
+    StringBuilder labels = new StringBuilder();
+    for (UiObject2 e : os.findObjects(By.text(Pattern.compile(".+")))) {
+      if (labels.length() > 600) break;
+      labels.append(" | ").append(e.getText());
+    }
+    return " package=" + os.getCurrentPackageName() + " text=" + labels;
+  }
+
   private UiObject2 nativeText(String s) {
     UiObject2 o = os.wait(Until.findObject(By.text(Pattern.compile(s))), 15000);
-    assertNotNull("Android picker: " + s, o);
+    if (o == null) throw new AssertionError("Android picker: " + s + nativeScreen());
+    return o;
+  }
+
+  private UiObject2 imageInFiles(String name) {
+    String stem = name.substring(0, name.lastIndexOf('.'));
+    UiObject2 o = os.wait(Until.findObject(By.textContains(stem)), 6500);
+    if (o == null) o = os.wait(Until.findObject(By.descContains(stem)), 2000);
+    if (o == null) throw new AssertionError("Image missing: " + name + nativeScreen());
     return o;
   }
 
@@ -115,6 +132,7 @@ public class PhoneToolsTest {
     v.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
     v.put(MediaStore.MediaColumns.MIME_TYPE, "image/png");
     v.put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/");
+    v.put(MediaStore.MediaColumns.IS_PENDING, 1);
     Uri u = app.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
     Bitmap b = Bitmap.createBitmap(180, 100, Bitmap.Config.ARGB_8888);
     try (OutputStream out = app.getContentResolver().openOutputStream(u)) {
@@ -123,12 +141,21 @@ public class PhoneToolsTest {
     } finally {
       b.recycle();
     }
+    v.clear();
+    v.put(MediaStore.MediaColumns.IS_PENDING, 0);
+    assertEquals(1, app.getContentResolver().update(u, v, null, null));
+    String path = "/sdcard/Download/" + name;
+    assertEquals(
+      "Published image visible in Downloads",
+      path,
+      os.executeShellCommand("ls " + path).trim()
+    );
     return u;
   }
 
   private void pickImage(StudioScreen ui, String name, int count) throws Exception {
     ui.touch(".dropzone");
-    nativeText(Pattern.quote(name)).click();
+    imageInFiles(name).click();
     UiObject2 open = os.wait(Until.findObject(By.text(Pattern.compile("(?i)^open$"))), 900);
     if (open != null) open.click();
     ui.await(

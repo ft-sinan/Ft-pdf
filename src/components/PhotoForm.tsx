@@ -95,6 +95,7 @@ export default function PhotoForm({
           <button
             type="button"
             className="dropzone"
+            data-autofocus
             disabled={!!work}
             onClick={() => input.current?.click()}
           >
