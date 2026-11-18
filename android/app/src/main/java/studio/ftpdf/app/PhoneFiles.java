@@ -34,6 +34,9 @@ final class PhoneFiles {
 
   static void schema(SQLiteDatabase db) {
     db.execSQL(
+      "CREATE TABLE IF NOT EXISTS phone_optins(owner TEXT PRIMARY KEY REFERENCES users(id), enabled INTEGER NOT NULL)"
+    );
+    db.execSQL(
       "CREATE TABLE IF NOT EXISTS phone_index(owner TEXT NOT NULL REFERENCES users(id), id TEXT NOT NULL, scope TEXT NOT NULL, locator TEXT NOT NULL, disk INTEGER NOT NULL, name TEXT NOT NULL, folder TEXT NOT NULL, size INTEGER NOT NULL, modified INTEGER NOT NULL, first_modified INTEGER NOT NULL, added INTEGER NOT NULL, PRIMARY KEY(owner,id))"
     );
     db.execSQL(
@@ -89,8 +92,21 @@ final class PhoneFiles {
     indexed = owner;
   }
 
+  // Version 3.2 stored opt-in in preferences. Keep existing choices; from now
+  // on commit an explicit change before allowing a scan or reporting it stopped.
+  private boolean enabled(String owner) {
+    try (
+      Cursor c = db().rawQuery("SELECT enabled FROM phone_optins WHERE owner=?", new String[] {
+        owner,
+      })
+    ) {
+      if (c.moveToFirst()) return c.getInt(0) != 0;
+    }
+    return prefs.getBoolean("scan:" + owner, false);
+  }
+
   private String storageStamp(String owner) {
-    boolean broad = prefs.getBoolean("scan:" + owner, false) && allowed();
+    boolean broad = enabled(owner) && allowed();
     StringBuilder s = new StringBuilder(broad ? "all" : "folders");
     for (String t : new TreeSet<>(readableTrees(owner))) s.append('|').append(t);
     if (broad && Build.VERSION.SDK_INT >= 30) try {
@@ -184,11 +200,18 @@ final class PhoneFiles {
   }
 
   synchronized void enable(String owner, boolean enabled) {
-    if (!enabled) db().delete("phone_index", "owner=? AND disk=1", new String[] { owner });
-    prefs
-      .edit()
-      .putBoolean("scan:" + owner, enabled)
-      .apply();
+    SQLiteDatabase db = db();
+    db.beginTransaction();
+    try {
+      db.execSQL("INSERT OR REPLACE INTO phone_optins(owner,enabled) VALUES(?,?)", new Object[] {
+        owner,
+        enabled ? 1 : 0,
+      });
+      if (!enabled) db.delete("phone_index", "owner=? AND disk=1", new String[] { owner });
+      db.setTransactionSuccessful();
+    } finally {
+      db.endTransaction();
+    }
     clear();
   }
 
@@ -216,10 +239,12 @@ final class PhoneFiles {
       .getContentResolver()
       .takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION);
     s.add(tree.toString());
-    prefs
-      .edit()
-      .putStringSet("trees:" + owner, s)
-      .apply();
+    if (
+      !prefs
+        .edit()
+        .putStringSet("trees:" + owner, s)
+        .commit()
+    ) throw new IOException("Could not save the folder selection.");
     clear();
   }
 
@@ -227,17 +252,19 @@ final class PhoneFiles {
     return UUID.nameUUIDFromBytes(s.getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
   }
 
-  synchronized void forget(String owner, String id) {
+  synchronized void forget(String owner, String id) throws IOException {
     Set<String> s = trees(owner);
     String found = null;
     for (String t : s) if (key(t).equals(id)) found = t;
     if (found == null) return;
     s.remove(found);
     db().delete("phone_index", "owner=? AND scope=?", new String[] { owner, found });
-    prefs
-      .edit()
-      .putStringSet("trees:" + owner, s)
-      .apply();
+    if (
+      !prefs
+        .edit()
+        .putStringSet("trees:" + owner, s)
+        .commit()
+    ) throw new IOException("Could not save the folder selection.");
     boolean used = false;
     for (Object v : prefs.getAll().values())
       if (v instanceof Set && ((Set<?>) v).contains(found)) used = true;
@@ -431,7 +458,7 @@ final class PhoneFiles {
       if (!force && !due(token)) return page(owner, "", 0, false, false);
       ticket = ++generation;
     }
-    boolean broad = prefs.getBoolean("scan:" + owner, false) && allowed();
+    boolean broad = enabled(owner) && allowed();
     Map<String, Entry> found = new HashMap<>();
     Set<String> complete = new HashSet<>();
     Budget b = new Budget();
@@ -529,7 +556,7 @@ final class PhoneFiles {
   ) throws Exception {
     restore(owner);
     boolean allowed = allowed(),
-      enabled = prefs.getBoolean("scan:" + owner, false);
+      enabled = enabled(owner);
     Set<String> linked = trees(owner),
       readable = readableTrees(owner);
     JSONArray folders = new JSONArray(),
@@ -578,7 +605,7 @@ final class PhoneFiles {
     if (e.file != null) {
       if (
         !allowed() ||
-        !prefs.getBoolean("scan:" + owner, false) ||
+        !enabled(owner) ||
         !roots().contains(e.root) ||
         !e.file.getAbsoluteFile().equals(e.file.getCanonicalFile()) ||
         !e.file.getCanonicalPath().startsWith(e.root.getPath() + File.separator) ||

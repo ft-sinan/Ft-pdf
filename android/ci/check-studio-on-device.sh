@@ -72,6 +72,7 @@ adb shell appops set --uid "$pkg" MANAGE_EXTERNAL_STORAGE allow
 required_case "$pkg.PhoneToolsTest#sharedFilesAppearOnHomeAndOriginalIsUntouched" 1 shared-storage
 required_case "$pkg.IndexRestartTest#rememberFirstScan" 1 remember-index
 adb shell am force-stop "$pkg"
+adb shell cmd appops get --uid "$pkg" MANAGE_EXTERNAL_STORAGE
 required_case "$pkg.IndexRestartTest#coldListThenOnlyNewFiles" 1 cold-index-delta
 adb shell appops set --uid "$pkg" MANAGE_EXTERNAL_STORAGE deny
 required_case "$pkg.PhoneToolsTest#folderGrantWorksWithoutAllFilesAccess" 1 folder-access

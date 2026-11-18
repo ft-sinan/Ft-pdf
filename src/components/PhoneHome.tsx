@@ -103,8 +103,8 @@ export default function PhoneHome({
       void rpc<Page>('phone.page', { check: true, expectedOwner: owner })
         .then((snapshot) => {
           if (!live) return;
+          scanned((n) => n + 1); // Recheck grants immediately even if a background diff is due.
           if (snapshot.due) void scan(false);
-          else scanned((n) => n + 1);
         })
         .catch((e) => {
           if (live) error(message(e));
@@ -116,10 +116,12 @@ export default function PhoneHome({
       offsetTo(0);
       void scan(true);
     };
+    window.addEventListener('ft:resume', check);
     window.addEventListener('ft:sources', updated);
     document.addEventListener('visibilitychange', check);
     return () => {
       live = false;
+      window.removeEventListener('ft:resume', check);
       window.removeEventListener('ft:sources', updated);
       document.removeEventListener('visibilitychange', check);
     };

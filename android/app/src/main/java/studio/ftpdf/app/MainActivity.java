@@ -768,9 +768,7 @@ public class MainActivity extends Activity {
           TREE
         );
       } else if (phone.allowed()) {
-        phone.enable(owner, true);
-        sourceOwner = null;
-        sourcesChanged();
+        finishSource(ACCESS, null); // May commit to SQLite; keep it off the UI thread.
       } else if (Build.VERSION.SDK_INT >= 30) {
         startActivityForResult(
           new Intent(

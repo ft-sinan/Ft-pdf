@@ -67,7 +67,16 @@ public class IndexRestartTest {
     try {
       JSONObject page = index.page(owner, dir.getName(), 0, false, false);
       assertEquals(qa.getLong("checked", -1), page.getLong("checked"));
-      assertEquals(2, page.getInt("total"));
+      assertTrue("Android all-files grant must still be present", page.getBoolean("allowed"));
+      assertTrue(
+        "An acknowledged source opt-in must survive force-stop",
+        page.getBoolean("enabled")
+      );
+      assertEquals(
+        "Cold page before rescanning, synthetic folder=" + dir.getName() + "; " + page,
+        2,
+        page.getInt("total")
+      );
       assertEquals("first", new String(TestFiles.bytes(index.open(id)), StandardCharsets.UTF_8));
       try (StudioScreen ui = new StudioScreen()) {
         ui.fill("[aria-label='Search phone files']", dir.getName());
@@ -84,7 +93,8 @@ public class IndexRestartTest {
         ui.fill("[aria-label='Search phone files']", dir.getName());
         ui.visible("[aria-label='Open phone file Remember.txt']");
         PhoneFiles fresh = new PhoneFiles(app, library);
-        assertEquals(2, fresh.page(owner, dir.getName(), 0, false, false).getInt("total"));
+        JSONObject refreshed = fresh.page(owner, dir.getName(), 0, false, false);
+        assertEquals("Reopened metadata after delta: " + refreshed, 2, refreshed.getInt("total"));
         assertEquals(
           "changed outside",
           new String(TestFiles.bytes(fresh.open(id)), StandardCharsets.UTF_8)
