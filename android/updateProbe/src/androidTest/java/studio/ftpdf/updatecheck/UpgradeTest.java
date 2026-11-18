@@ -86,14 +86,22 @@ public class UpgradeTest {
     named("Save changes").click();
     named("Saved");
     named("Back to reader").click();
-    named(body());
+    named("Back to workspace").click();
+    assertSavedDocument(); // Reopen from the library, not the original in-memory editor.
+  }
+
+  private void assertSavedDocument() {
+    named("Workspace overview"); // Not a new profile or onboarding screen.
+    named("Continue reading").click();
+    named("Update " + arg("nonce") + ".txt");
+    named("Edit").click();
+    // Android WebView may expose the reader as one accessible region. The
+    // editable field reliably exposes the actual saved content without a test hook.
+    assertEquals("Reopened private document content", body(), field().getText());
   }
 
   @Test public void reopenAfterUpdate() throws Exception {
     openInstalledRelease();
-    named("Workspace overview"); // Not a new profile or onboarding screen.
-    named("Continue reading").click();
-    named("Edit").click();
-    assertEquals("Actual private document content survived install -r", body(), field().getText());
+    assertSavedDocument();
   }
 }

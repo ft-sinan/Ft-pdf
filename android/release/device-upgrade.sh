@@ -32,10 +32,12 @@ PY
     exit 1
   fi
 }
+test "$(sha256sum "$RELEASE_WORK/before.apk" | cut -d' ' -f1)" = "$(jq -er .sha256 "$RELEASE_WORK/before.json")"
 adb install "$RELEASE_WORK/before.apk"
 run_case saveBeforeUpdate "$before"
 adb shell am force-stop "$pkg"
 # No -t, no downgrade, no data reset. The Android installer verifies update compatibility.
+(cd "$RELEASE_WORK/out" && sha256sum --strict --check SHA256SUMS.txt)
 adb install -r "$RELEASE_WORK/out/ft-pdf.apk"
 run_case reopenAfterUpdate "$after"
 echo "Passed: code $before → $after, one signer, private document reopened offline."

@@ -40,6 +40,8 @@ jobs:
             fi
           fi
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+      - name: Test release guardrails without credentials
+        run: python3 -m unittest discover -s android/release -v
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: npm }
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5

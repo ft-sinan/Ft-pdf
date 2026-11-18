@@ -75,14 +75,27 @@ def verify_update(old, new, version):
     require(new['versionCode'] > 8 and 0 < old['versionCode'] < new['versionCode'], 'Production versionCode must advance past both 3.3.1 and the baseline.')
 
 
-def latest_production():
+def latest_production(repo=None):
     # Never treat an API failure as a first release. Inspect published production
     # assets independently of the branch checkout, including on stale branches.
-    tags = command('gh', 'api', '--paginate', f'repos/{os.environ["GITHUB_REPOSITORY"]}/releases?per_page=100',
-                   '--jq', '.[] | select(.draft == false and .prerelease == false and any(.assets[]; .name == "ft-pdf.apk")) | .tag_name').splitlines()
-    for tag in tags:
-        require(tag.startswith('v') and VERSION.fullmatch(tag[1:]), 'Unexpected production tag: ' + tag)
-    return max(tags, key=lambda t: tuple(map(int, t[1:].split('.'))), default=None)
+    repo = repo or os.environ['GITHUB_REPOSITORY']
+    records = command('gh', 'api', '--paginate', f'repos/{repo}/releases?per_page=100', '--jq',
+                      '.[] | select(.draft == false and .prerelease == false) | {tag: .tag_name, files: [.assets[].name]} | @json')
+    releases = []
+    for line in records.splitlines():
+        item = json.loads(line)
+        tag, files = item['tag'], set(item['files'])
+        number = tuple(map(int, tag[1:].split('.'))) if tag.startswith('v') and VERSION.fullmatch(tag[1:]) else ()
+        # v3.4.0+ stable version tags are reserved for production. Don't silently
+        # pick an older baseline when a newer release has lost some/all assets.
+        if number >= (3, 4, 0) or files.intersection({'ft-pdf.apk', 'production.json'}):
+            require(number, 'Unexpected production tag: ' + tag)
+            releases.append((number, tag, files))
+    if not releases:
+        return None
+    _, tag, files = max(releases, key=lambda r: r[0])
+    require({'ft-pdf.apk', 'SHA256SUMS.txt', 'production.json'} <= files, 'Missing assets on previous production release ' + tag)
+    return tag
 
 
 def sign(src, dst, store, env):

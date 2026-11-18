@@ -37,6 +37,21 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole('button', { name: 'Open my library' }).click();
   await expect(page.getByRole('heading', { name: 'Workspace overview' })).toBeVisible();
 });
+test('Android download links distinguish the stable channel from the preserved 3.3.1 debug APK', async ({
+  page,
+}) => {
+  await page.getByRole('button', { name: 'Android app' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('link', { name: 'View latest Android release' })).toHaveAttribute(
+    'href',
+    'https://github.com/ft-sinan/Ft-pdf/releases/latest',
+  );
+  await expect(dialog.getByRole('link', { name: '3.3.1 debug APK' })).toHaveAttribute(
+    'href',
+    '/downloads/ft-pdf-debug.apk',
+  );
+  await expect(dialog).toContainText('Uninstalling erases the private library');
+});
 test('create, edit and download text, then rename, trash and restore it', async ({ page }) => {
   await page.getByRole('button', { name: 'New document', exact: true }).click();
   const dialog = page.getByRole('dialog');

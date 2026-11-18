@@ -15,17 +15,30 @@ export default function AndroidDialog({ close }: { close: () => void }) {
           </span>
           <div>
             <strong>Ft PDF · Android edition</strong>
-            <p>Android 8.0+ · Debug APK</p>
+            <p>Android 8.0 or later</p>
           </div>
         </div>
         <a
           className="btn primary full"
-          href="/downloads/ft-pdf-debug.apk"
-          download="Ft-PDF-debug.apk"
+          href="https://github.com/ft-sinan/Ft-pdf/releases/latest"
+          target="_blank"
+          rel="noopener noreferrer"
         >
           <Download size={16} />
-          Download Android APK
+          View latest Android release
         </a>
+        <div className="android-step">
+          <strong>Already using 3.3.1?</strong>
+          <p>
+            The{' '}
+            <a href="/downloads/ft-pdf-debug.apk" download>
+              3.3.1 debug APK
+            </a>{' '}
+            is still available. Before replacing it with a production release, use{' '}
+            <b>Save a copy to Files</b> on important documents and open the exports to check them.
+            Uninstalling erases the private library.
+          </p>
+        </div>
         <div className="android-step">
           <strong>Open a document and start reading</strong>
           <p>
