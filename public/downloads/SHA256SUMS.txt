@@ -1,1 +1,1 @@
-76fa7af7e6cd822dc54e61d52205a453193545116898a2e375ac20c696859d72  ft-pdf-debug.apk
+5b6e9cba6d784c80ba41fad58dfa2f719ebb9ab9a7faad801ab90b42fa58998d  ft-pdf-debug.apk
