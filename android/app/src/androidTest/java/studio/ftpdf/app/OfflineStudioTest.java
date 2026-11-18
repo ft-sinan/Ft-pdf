@@ -158,6 +158,9 @@ public class OfflineStudioTest {
         String mark = legacy ? "Converted field notes" : "Edited local proposal";
         ui.fill(word, mark);
         ui.save();
+        ui.closeEditor();
+        ui.button(legacy ? "Open legacy-word.docx" : "Open Imported brief.docx");
+        ui.value(word, mark);
         ui.reload();
         ui.value(word, mark);
         try (ZipInputStream zip = new ZipInputStream(db().read(id(), false).stream)) {

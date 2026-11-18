@@ -52,7 +52,13 @@ final class StudioScreen implements AutoCloseable {
       if ("true".equals(js(expr))) return;
       SystemClock.sleep(120);
     } while (SystemClock.elapsedRealtime() < end);
-    throw new AssertionError(label + " — screen: " + js("document.body?.innerText.slice(-1800)"));
+    throw new AssertionError(
+      label +
+        " — route: " +
+        js("location.hash") +
+        " — screen: " +
+        js("document.body?.innerText.slice(-1800)")
+    );
   }
 
   static String str(String s) {
@@ -135,7 +141,14 @@ final class StudioScreen implements AutoCloseable {
   }
 
   void reload() throws Exception {
+    // reload() schedules a navigation. The old, editable DOM can still answer queries
+    // for a few frames; never count that as a successful reopen or send a back tap to it.
+    js("window.__ftPreviousTestDocument=true");
     activity.onActivity(a -> ((WebView) a.findViewById(R.id.library_webview)).reload());
+    await(
+      "fresh document after reload",
+      "!window.__ftPreviousTestDocument && document.readyState==='complete' && !!(q('.editor-shell') || q('.app-shell'))"
+    );
   }
 
   void closeEditor() throws Exception {
