@@ -28,6 +28,9 @@ public final class MainActivity extends Activity {
     ORIGIN = "https://" + HOST;
   private static final int PICK = 20,
     SAVE = 21,
+    TREE = 22,
+    ACCESS = 23,
+    CAMERA = 24,
     CREAM = 0xfffbfaf7;
   private static final String[] TYPES = {
     "application/pdf",
@@ -41,8 +44,32 @@ public final class MainActivity extends Activity {
   private WebView web;
   private FrameLayout root;
   private DeviceLibrary library;
+  private PhoneFiles phone;
+  private String sourceOwner;
+  private final ExecutorService scans = Executors.newSingleThreadExecutor();
   private String pendingExport;
+  private java.util.function.BiConsumer<Boolean, String> exportReply;
   private ValueCallback<Uri[]> picker;
+  private Uri captureUri;
+  private File captureFile;
+
+  private void takePhoto() throws Exception {
+    File dir = new File(getCacheDir(), "photo-captures");
+    dir.mkdirs();
+    for (File f : Optional.ofNullable(dir.listFiles()).orElse(new File[0]))
+      if (f.lastModified() < System.currentTimeMillis() - 86400000L) f.delete();
+    captureFile = File.createTempFile("Page-", ".jpg", dir);
+    captureUri = androidx.core.content.FileProvider.getUriForFile(
+      this,
+      getPackageName() + ".capture",
+      captureFile
+    );
+    Intent i = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
+      .putExtra(android.provider.MediaStore.EXTRA_OUTPUT, captureUri)
+      .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    i.setClipData(ClipData.newRawUri("Page", captureUri));
+    startActivityForResult(i, CAMERA);
+  }
 
   @Override
   public void onCreate(Bundle state) {
@@ -62,9 +89,11 @@ public final class MainActivity extends Activity {
       this::back
     );
     library = DeviceLibrary.instance(this);
+    phone = new PhoneFiles(this, library);
     if (state == null) queue(getIntent());
     else {
       pendingExport = state.getString("export");
+      sourceOwner = state.getString("sourceOwner");
       ArrayList<Uri> items = state.getParcelableArrayList("inbox");
       if (items != null) for (Uri u : items) add(u);
     }
@@ -120,10 +149,31 @@ public final class MainActivity extends Activity {
           ) return false;
           if (picker != null) picker.onReceiveValue(null);
           picker = cb;
+          if (p.isCaptureEnabled() && Arrays.toString(p.getAcceptTypes()).contains("image/")) {
+            try {
+              takePhoto();
+            } catch (Exception e) {
+              if (captureFile != null) captureFile.delete();
+              captureUri = null;
+              picker = null;
+              cb.onReceiveValue(null);
+              toast("No camera app available. Choose existing images instead.");
+            }
+            return true;
+          }
+          List<String> types = new ArrayList<>();
+          for (String v : p.getAcceptTypes())
+            for (String t : v.split(",")) {
+              t = t.trim();
+              if (t.startsWith("image/")) types.add(t);
+              else if (t.contains("/") && !t.equals("*/*")) types.add(t);
+            }
+          if (types.isEmpty()) types.addAll(Arrays.asList(TYPES));
           Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
-            .setType("*/*")
-            .putExtra(Intent.EXTRA_MIME_TYPES, TYPES)
+            .setType(types.size() == 1 ? types.get(0) : "*/*")
+            .putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+            .putExtra(Intent.EXTRA_MIME_TYPES, types.toArray(new String[0]))
             .putExtra(
               Intent.EXTRA_ALLOW_MULTIPLE,
               p.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE
@@ -148,16 +198,102 @@ public final class MainActivity extends Activity {
         if (!main || !trusted(from) || w != web) return;
         String data = msg.getData();
         if (data == null || data.length() > 450000) return;
-        io.execute(() -> {
+        JSONObject envelope;
+        try {
+          envelope = new JSONObject(data);
+        } catch (Exception invalid) {
+          return;
+        }
+        ("phone.scan".equals(envelope.optString("op")) ? scans : io).execute(() -> {
           JSONObject response = new JSONObject();
           try {
-            JSONObject request = new JSONObject(data);
+            JSONObject request = envelope;
             response.put("id", request.getString("id"));
             String op = request.getString("op");
             JSONObject a = request.optJSONObject("args");
             if (a == null) a = new JSONObject();
             Object value;
-            if (op.equals("inbox.list")) value = inboxList();
+            if (op.startsWith("phone.")) {
+              String owner = library.currentOwner();
+              switch (op) {
+                case "phone.scan":
+                  value = phone.scan(owner);
+                  break;
+                case "phone.page":
+                  value = phone.page(owner, a.optString("q"), Math.max(0, a.optInt("offset")));
+                  break;
+                case "phone.stop":
+                  phone.enable(owner, false);
+                  value = true;
+                  break;
+                case "phone.forget":
+                  phone.forget(owner, a.getString("id"));
+                  value = true;
+                  break;
+                case "phone.access":
+                case "phone.folder":
+                  runOnUiThread(() -> chooseSource(owner, op.equals("phone.folder")));
+                  value = true;
+                  break;
+                default:
+                  throw new IOException("Unknown phone source action.");
+              }
+            } else if (op.equals("export.bytes")) {
+              String stage = a.getString("id"),
+                ext = a.getString("ext"),
+                title = a.getString("name").trim().replaceAll("[\\p{Cntrl}/\\\\]", " ");
+              if (
+                !Arrays.asList("zip", "jpg", "xlsx", "pptx").contains(ext) ||
+                title.isEmpty() ||
+                title.length() > 140
+              ) throw new IOException("Invalid output file name or format.");
+              library.pinExport(stage);
+              String token = request.getString("id");
+              runOnUiThread(() -> {
+                java.util.function.BiConsumer<Boolean, String> answer = (saved, why) -> {
+                  if (isDestroyed() || web != w) return;
+                  try {
+                    reply.postMessage(
+                      new JSONObject()
+                        .put("id", token)
+                        .put("ok", why == null)
+                        .put("value", saved)
+                        .put("error", why)
+                        .toString()
+                    );
+                  } catch (Exception ignored) {}
+                };
+                if (pendingExport != null) {
+                  library.finishExport(stage);
+                  answer.accept(false, "Finish the current export first.");
+                  return;
+                }
+                pendingExport = "temp:" + stage;
+                exportReply = answer;
+                String mime = ext.equals("zip")
+                  ? "application/zip"
+                  : ext.equals("jpg")
+                    ? "image/jpeg"
+                    : ext.equals("xlsx")
+                      ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      : "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+                try {
+                  startFiles(
+                    new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                      .addCategory(Intent.CATEGORY_OPENABLE)
+                      .setType(mime)
+                      .putExtra(Intent.EXTRA_TITLE, title + "." + ext),
+                    SAVE
+                  );
+                } catch (Exception e) {
+                  pendingExport = null;
+                  exportReply = null;
+                  library.finishExport(stage);
+                  answer.accept(false, "Android Files is unavailable.");
+                }
+              });
+              return;
+            } else if (op.equals("inbox.list")) value = inboxList();
             else if (op.equals("inbox.done")) {
               inbox.remove(a.getString("id"));
               value = true;
@@ -259,7 +395,11 @@ public final class MainActivity extends Activity {
       Map<String, String> h = new HashMap<>();
       h.put("X-Content-Type-Options", "nosniff");
       h.put("Cache-Control", "no-store");
-      if (path.startsWith("/device-file/") || path.startsWith("/inbox/")) {
+      if (
+        path.startsWith("/device-file/") ||
+        path.startsWith("/inbox/") ||
+        path.startsWith("/phone-file/")
+      ) {
         if (
           r.isForMainFrame() ||
           (!"1".equals(r.getRequestHeaders().get("X-Ft-Read")) &&
@@ -267,7 +407,10 @@ public final class MainActivity extends Activity {
         ) return denied(403);
         h.put("Content-Security-Policy", "sandbox; default-src 'none'");
         InputStream stream;
-        if (path.startsWith("/inbox/")) {
+        if (path.startsWith("/phone-file/")) stream = new LimitedInputStream(
+          phone.open(path.substring(12))
+        );
+        else if (path.startsWith("/inbox/")) {
           Uri u = inbox.get(path.substring(7));
           if (u == null) return denied(404);
           InputStream in = getContentResolver().openInputStream(u);
@@ -289,9 +432,14 @@ public final class MainActivity extends Activity {
           path.startsWith("/assets/") ||
           path.startsWith("/fonts/") ||
           path.startsWith("/icons/") ||
-          path.startsWith("/pdf-assets/")
+          path.startsWith("/pdf-assets/") ||
+          path.startsWith("/ocr/")
         )
       ) return denied(404);
+      if (path.startsWith("/ocr/") && path.endsWith(".js")) h.put(
+        "Content-Security-Policy",
+        "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'none'"
+      );
       if (path.equals("/index.html")) h.put(
         "Content-Security-Policy",
         "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' blob:; worker-src 'self' blob:; frame-src 'self' blob: about:; object-src 'none'; base-uri 'none'; form-action 'none'"
@@ -420,9 +568,92 @@ public final class MainActivity extends Activity {
     }
   }
 
+  private void sourcesChanged() {
+    if (web != null && !isDestroyed()) web.evaluateJavascript(
+      "window.dispatchEvent(new Event('ft:sources'))",
+      null
+    );
+  }
+
+  private void chooseSource(String owner, boolean folder) {
+    if (sourceOwner != null || isFinishing()) return;
+    sourceOwner = owner;
+    try {
+      if (folder) {
+        startFiles(
+          new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+            .putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+            .addFlags(
+              Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            ),
+          TREE
+        );
+      } else if (phone.allowed()) {
+        phone.enable(owner, true);
+        sourceOwner = null;
+        sourcesChanged();
+      } else if (Build.VERSION.SDK_INT >= 30) {
+        startActivityForResult(
+          new Intent(
+            android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+            Uri.parse("package:" + getPackageName())
+          ),
+          ACCESS
+        );
+      } else requestPermissions(
+        new String[] { android.Manifest.permission.READ_EXTERNAL_STORAGE },
+        ACCESS
+      );
+    } catch (Exception e) {
+      sourceOwner = null;
+      toast("Use Choose folder to select readable documents.");
+      sourcesChanged();
+    }
+  }
+
+  private void finishSource(int code, Uri uri) {
+    String owner = sourceOwner;
+    sourceOwner = null;
+    if (owner == null) return;
+    io.execute(() -> {
+      try {
+        if (owner.equals(library.currentOwner())) {
+          if (code == ACCESS) phone.enable(owner, phone.allowed());
+          else if (uri != null) phone.link(owner, uri);
+        }
+      } catch (Exception e) {
+        runOnUiThread(() -> toast("Folder access was not granted."));
+      }
+      runOnUiThread(this::sourcesChanged);
+    });
+  }
+
+  @Override
+  public void onRequestPermissionsResult(int code, String[] perms, int[] grants) {
+    super.onRequestPermissionsResult(code, perms, grants);
+    if (code == ACCESS) finishSource(code, null);
+  }
+
   @Override
   protected void onActivityResult(int code, int result, Intent data) {
     super.onActivityResult(code, result, data);
+    if (code == TREE || code == ACCESS) {
+      finishSource(code, result == RESULT_OK && data != null ? data.getData() : null);
+      return;
+    }
+    if (code == CAMERA) {
+      if (captureUri != null) revokeUriPermission(
+        captureUri,
+        Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION
+      );
+      boolean ok = result == RESULT_OK && captureFile != null && captureFile.length() > 0;
+      if (picker != null) picker.onReceiveValue(ok ? new Uri[] { captureUri } : null);
+      if (!ok && captureFile != null) captureFile.delete();
+      picker = null;
+      captureUri = null;
+      captureFile = null;
+      return;
+    }
     if (code == PICK && picker != null) {
       ArrayList<Uri> items = new ArrayList<>();
       if (result == RESULT_OK && data != null) {
@@ -442,12 +673,21 @@ public final class MainActivity extends Activity {
     if (code == SAVE) {
       String id = pendingExport;
       pendingExport = null;
-      if (result != RESULT_OK || data == null || data.getData() == null || id == null) return;
-      Uri dest = data.getData();
-      if (!"content".equals(dest.getScheme())) return;
+      java.util.function.BiConsumer<Boolean, String> answer = exportReply;
+      exportReply = null;
+      if (id == null) return;
+      boolean temp = id.startsWith("temp:");
+      String stage = temp ? id.substring(5) : "";
+      Uri dest = data == null ? null : data.getData();
+      if (result != RESULT_OK || dest == null || !"content".equals(dest.getScheme())) {
+        if (temp) library.finishExport(stage);
+        if (answer != null) answer.accept(false, null);
+        return;
+      }
       io.execute(() -> {
+        String issue = null;
         try (
-          InputStream in = library.read(id, false).stream;
+          InputStream in = temp ? library.openExport(stage) : library.read(id, false).stream;
           OutputStream out = getContentResolver().openOutputStream(dest, "wt")
         ) {
           if (out == null) throw new IOException("Destination unavailable");
@@ -455,10 +695,15 @@ public final class MainActivity extends Activity {
           int n;
           while ((n = in.read(b)) != -1) out.write(b, 0, n);
         } catch (Exception e) {
-          runOnUiThread(() -> toast("Could not export: " + e.getMessage()));
-          return;
+          issue = "Could not export: " + e.getMessage();
+        } finally {
+          if (temp) library.finishExport(stage);
         }
-        runOnUiThread(() -> toast("Document saved to Files"));
+        String why = issue;
+        runOnUiThread(() -> {
+          if (answer != null) answer.accept(why == null, why);
+          else toast(why == null ? "Document saved to Files" : why);
+        });
       });
     }
   }
@@ -480,6 +725,7 @@ public final class MainActivity extends Activity {
   protected void onSaveInstanceState(Bundle state) {
     super.onSaveInstanceState(state);
     state.putString("export", pendingExport);
+    state.putString("sourceOwner", sourceOwner);
     synchronized (inbox) {
       state.putParcelableArrayList("inbox", new ArrayList<>(inbox.values()));
     }
@@ -503,6 +749,7 @@ public final class MainActivity extends Activity {
   @Override
   protected void onDestroy() {
     if (picker != null) picker.onReceiveValue(null);
+    scans.shutdownNow();
     io.shutdown();
     if (web != null) {
       root.removeView(web);

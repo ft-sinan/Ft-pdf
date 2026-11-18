@@ -80,6 +80,7 @@ function Footer({
   );
 }
 export function NewForm({
+  photos,
   collections,
   initial,
   onClose,
@@ -88,6 +89,7 @@ export function NewForm({
   collections: Collection[];
   initial: string;
   onClose: () => void;
+  photos: () => void;
   onDone: (d: Doc) => void;
 }) {
   const [name, setName] = useState(''),
@@ -143,6 +145,12 @@ export function NewForm({
               ))}
             </div>
           </div>
+          {onDevice && type === 'pdf' && (
+            <button className="btn secondary" type="button" onClick={photos}>
+              <FileUp size={16} />
+              Create from images
+            </button>
+          )}
           <label className="field">
             Document name
             <div className="input-affix">

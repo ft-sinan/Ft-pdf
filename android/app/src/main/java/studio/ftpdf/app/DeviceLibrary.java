@@ -41,6 +41,7 @@ final class DeviceLibrary extends SQLiteOpenHelper {
   private static final class Stage {
 
     final String owner;
+    boolean pinned;
     long used = now();
 
     Stage(String owner) {
@@ -56,7 +57,7 @@ final class DeviceLibrary extends SQLiteOpenHelper {
   }
 
   DeviceLibrary(Context c) {
-    super(c.getApplicationContext(), "ft-library-v1.db", null, 1);
+    super(c.getApplicationContext(), "ft-library-v1.db", null, 2);
     app = c.getApplicationContext();
     objects = new File(app.getFilesDir(), "documents");
     staging = new File(app.getCacheDir(), "incoming-documents");
@@ -85,6 +86,7 @@ final class DeviceLibrary extends SQLiteOpenHelper {
       "CREATE TABLE docs(id TEXT PRIMARY KEY,owner TEXT NOT NULL REFERENCES users(id),name TEXT NOT NULL,type TEXT NOT NULL,collectionId TEXT REFERENCES collections(id) ON DELETE SET NULL,starred INTEGER NOT NULL DEFAULT 0,trashed INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL,updated INTEGER NOT NULL,opened INTEGER NOT NULL,pages INTEGER,locked INTEGER NOT NULL,cover TEXT NOT NULL,size INTEGER NOT NULL,asset_key TEXT NOT NULL UNIQUE)"
     );
     db.execSQL("CREATE INDEX docs_owner ON docs(owner,updated)");
+    phoneLinks(db);
     db.execSQL(
       "CREATE TABLE activity(id INTEGER PRIMARY KEY,owner TEXT NOT NULL,message TEXT NOT NULL,created INTEGER NOT NULL)"
     );
@@ -92,7 +94,13 @@ final class DeviceLibrary extends SQLiteOpenHelper {
 
   @Override
   public void onUpgrade(SQLiteDatabase db, int old, int next) {
-    throw new IllegalStateException("Unsupported library migration");
+    if (old < 2) phoneLinks(db);
+  }
+
+  private void phoneLinks(SQLiteDatabase db) {
+    db.execSQL(
+      "CREATE TABLE IF NOT EXISTS phone_copies(owner TEXT NOT NULL,source TEXT NOT NULL,doc TEXT NOT NULL REFERENCES docs(id) ON DELETE CASCADE,PRIMARY KEY(owner,source))"
+    );
   }
 
   private SQLiteDatabase db() {
@@ -135,6 +143,10 @@ final class DeviceLibrary extends SQLiteOpenHelper {
     try (Cursor c = db().rawQuery(sql, args)) {
       return c.moveToFirst() ? c.getString(0) : null;
     }
+  }
+
+  synchronized String currentOwner() throws Exception {
+    return owner();
   }
 
   private String owner() throws Exception {
@@ -484,7 +496,7 @@ final class DeviceLibrary extends SQLiteOpenHelper {
 
   private String begin(String owner) throws Exception {
     for (String k : new ArrayList<>(uploads.keySet()))
-      if (now() - uploads.get(k).used > 300000) discard(k);
+      if (!uploads.get(k).pinned && now() - uploads.get(k).used > 300000) discard(k);
     if (uploads.size() >= 4) throw error("Finish the current import first.");
     String id = uid();
     uploads.put(id, new Stage(owner));
@@ -502,6 +514,20 @@ final class DeviceLibrary extends SQLiteOpenHelper {
     Stage stage = uploads.get(id);
     if (stage == null || !stage.owner.equals(owner)) throw error("Import expired. Try again.");
     stage.used = now();
+  }
+
+  synchronized void pinExport(String id) throws Exception {
+    requireStage(owner(), id);
+    uploads.get(id).pinned = true;
+  }
+
+  synchronized InputStream openExport(String id) throws Exception {
+    requireStage(owner(), id);
+    return new FileInputStream(part(staging, id, ".bin"));
+  }
+
+  synchronized void finishExport(String id) {
+    discard(id);
   }
 
   private Object put(String owner, JSONObject a, String stage) throws Exception {
@@ -566,6 +592,10 @@ final class DeviceLibrary extends SQLiteOpenHelper {
           owner,
           id,
         }
+      );
+      if (old == null && a.has("source")) db().execSQL(
+        "INSERT OR REPLACE INTO phone_copies VALUES(?,?,?)",
+        new Object[] { owner, a.getString("source"), id }
       );
       event(
         owner,
@@ -685,6 +715,15 @@ final class DeviceLibrary extends SQLiteOpenHelper {
         );
         db().execSQL("DELETE FROM collections WHERE owner=? AND id=?", new Object[] { u, id });
         return JSONObject.NULL;
+      case "copy.find": {
+        String match = one(
+          "SELECT d.id FROM docs d JOIN phone_copies p ON p.doc=d.id WHERE p.owner=? AND p.source=? AND d.owner=? AND d.trashed=0",
+          u,
+          a.getString("source"),
+          u
+        );
+        return match == null ? JSONObject.NULL : document(u, match);
+      }
       case "upload.begin":
         return begin(u);
       case "upload.append": {

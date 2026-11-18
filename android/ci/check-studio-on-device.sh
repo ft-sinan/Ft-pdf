@@ -42,3 +42,14 @@ run_case "$pkg.OfflineStudioTest#htmlSourceIsEditableAndPreviewIsSandboxed" 1 ht
 run_case "$pkg.OfflineStudioTest#textRoundTripsThroughTheSystemFilesPicker" 1 files-roundtrip
 run_case "$pkg.OfflineStudioTest#wordFilesOpenWithAndroidEditAndSerializeOffline" 1 word-formats
 run_case "$pkg.LocalPdfWriterTest" 2 pdf-renderer
+# Test permission granted and denied in separate processes. Never waive app-level opt-in.
+adb shell pm clear "$pkg"
+adb shell appops set --uid "$pkg" MANAGE_EXTERNAL_STORAGE allow
+failures=0
+(run_case "$pkg.PhoneToolsTest#sharedFilesAppearOnHomeAndOriginalIsUntouched" 1 shared-storage) || failures=1
+adb shell appops set --uid "$pkg" MANAGE_EXTERNAL_STORAGE deny
+(run_case "$pkg.PhoneToolsTest#folderGrantWorksWithoutAllFilesAccess" 1 folder-access) || failures=1
+(run_case "$pkg.PhoneToolsTest#orderAndRotatePhotosFromAndroidFiles" 1 image-pdf) || failures=1
+(run_case "$pkg.PhoneToolsTest#mergeAndExportSplitZipViaFiles" 1 toolbox-export) || failures=1
+(run_case "$pkg.PhoneToolsTest#offlineOcrProducesSearchablePages" 1 offline-ocr) || failures=1
+exit "$failures"

@@ -31,10 +31,13 @@ export function rpc<T>(op: string, args: object = {}): Promise<T> {
   const channel = port,
     id = String(++seq);
   return new Promise<T>((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      pending.delete(id);
-      reject(new Error('The device library did not respond. Please try again.'));
-    }, 90000);
+    const timer = window.setTimeout(
+      () => {
+        pending.delete(id);
+        reject(new Error('The device library did not respond. Please try again.'));
+      },
+      op === 'export.bytes' ? 900000 : 90000,
+    );
     pending.set(id, { resolve: (value) => resolve(value as T), reject, timer });
     try {
       channel.postMessage(JSON.stringify({ id, op, args }));
@@ -75,6 +78,24 @@ export async function store<T>(args: object, bytes: Blob, content: string) {
     return await rpc<T>('document.put', { ...args, stage });
   } catch (e) {
     await rpc('upload.cancel', { id: stage }).catch(() => {});
+    throw e;
+  }
+}
+
+export async function exportResult(name: string, ext: string, blob: Blob) {
+  if (blob.size > 25 * 1048576)
+    throw new Error('Result exceeds the 25 MB limit. Select fewer pages.');
+  const id = await rpc<string>('upload.begin');
+  try {
+    for (let i = 0; i < blob.size; i += 144 * 1024)
+      await rpc('upload.append', {
+        id,
+        part: 'file',
+        data: await base64(blob.slice(i, i + 144 * 1024)),
+      });
+    return await rpc<boolean>('export.bytes', { id, name, ext });
+  } catch (e) {
+    await rpc('upload.cancel', { id }).catch(() => {});
     throw e;
   }
 }

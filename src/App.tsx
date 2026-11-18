@@ -21,6 +21,7 @@ import {
   HardDrive,
   History,
   LayoutDashboard,
+  Wrench,
   LogIn,
   LogOut,
   Menu,
@@ -67,9 +68,14 @@ import {
 } from './components/Forms';
 import { DocTable, Library, SectionTitle } from './components/Library';
 const Editor = lazy(() => import('./components/Editor'));
+const PhoneHome = lazy(() => import('./components/PhoneHome'));
+const PhotoForm = lazy(() => import('./components/PhotoForm'));
+const Toolbox = lazy(() => import('./components/Toolbox'));
 type Dialog = {
   kind:
     | 'new'
+    | 'photos'
+    | 'toolbox'
     | 'android'
     | 'import'
     | 'search'
@@ -542,6 +548,12 @@ export default function App() {
                 {sideLink('documents', 'All documents', <FileStack size={18} />, active.length)}
                 {sideLink('starred', 'Starred', <Star size={18} />)}
                 {sideLink('trash', 'Trash', <Trash2 size={18} />)}
+                {onDevice && (
+                  <button className="nav-item" onClick={() => modal({ kind: 'toolbox' })}>
+                    <Wrench size={18} />
+                    <span>PDF toolbox</span>
+                  </button>
+                )}
               </nav>
               <div className="sidebar-line" />
               <div className="nav-label collection-label">
@@ -713,6 +725,19 @@ export default function App() {
               </div>
               {view === 'overview' ? (
                 <>
+                  {onDevice && (
+                    <Suspense fallback={<p role="status">Loading phone documents…</p>}>
+                      <PhoneHome
+                        key={w.user.id}
+                        photos={() => modal({ kind: 'photos' })}
+                        tools={() => modal({ kind: 'toolbox' })}
+                        open={(d) => {
+                          upsert(d);
+                          nav('overview', d.id);
+                        }}
+                      />
+                    </Suspense>
+                  )}
                   <section className="resume-banner" aria-label="Last opened document">
                     <div className="hero-speckle" />
                     <div className="hero-copy">
@@ -907,8 +932,43 @@ export default function App() {
           )}
         </Popup>
       )}
+      {onDevice && (dialog?.kind === 'photos' || dialog?.kind === 'toolbox') && (
+        <Suspense
+          fallback={
+            <div className="toast" role="status">
+              <Spin />
+              Opening tool…
+            </div>
+          }
+        >
+          {dialog.kind === 'photos' ? (
+            <PhotoForm
+              collections={collections}
+              initial={context}
+              close={close}
+              done={(d) => {
+                upsert(d);
+                notify('Image PDF created');
+                nav(view, d.id);
+              }}
+            />
+          ) : (
+            <Toolbox
+              docs={active}
+              close={close}
+              photos={() => modal({ kind: 'photos' })}
+              done={(d) => {
+                upsert(d);
+                notify('New document saved');
+                nav(view, d.id);
+              }}
+            />
+          )}
+        </Suspense>
+      )}
       {dialog?.kind === 'new' && (
         <NewForm
+          photos={() => modal({ kind: 'photos' })}
           collections={collections}
           initial={context}
           onClose={close}

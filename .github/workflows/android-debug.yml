@@ -1,9 +1,9 @@
 name: Android debug APK
 on:
   push:
-    paths: ['android/**', 'src/**', 'shared/**', 'server/**', 'public/fonts/**', 'public/icons/**', 'public/brand.svg', 'scripts/build-device.mjs', 'package*.json', 'index.html', '*config.ts', 'tsconfig.json', 'tests/fixtures/**', '.github/workflows/android-debug.yml']
+    paths: ['android/**', 'src/**', 'shared/**', 'server/**', 'public/fonts/**', 'public/icons/**', 'public/brand.svg', 'scripts/build-device.mjs', 'package*.json', 'index.html', '*config.ts', 'tsconfig.json', 'tests/fixtures/**', 'tests/device-tools.mjs', '.github/workflows/android-debug.yml']
   pull_request:
-    paths: ['android/**', 'src/**', 'shared/**', 'server/**', 'public/fonts/**', 'public/icons/**', 'public/brand.svg', 'scripts/build-device.mjs', 'package*.json', 'index.html', '*config.ts', 'tsconfig.json', 'tests/fixtures/**', '.github/workflows/android-debug.yml']
+    paths: ['android/**', 'src/**', 'shared/**', 'server/**', 'public/fonts/**', 'public/icons/**', 'public/brand.svg', 'scripts/build-device.mjs', 'package*.json', 'index.html', '*config.ts', 'tsconfig.json', 'tests/fixtures/**', 'tests/device-tools.mjs', '.github/workflows/android-debug.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,6 +26,10 @@ jobs:
       - name: Test and assemble
         working-directory: android
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Check the bundled offline tool outputs
+        run: |
+          npx playwright install --with-deps --only-shell chromium
+          node tests/device-tools.mjs
       - name: Check signature and record checksum
         run: |
           mkdir -p "$RUNNER_TEMP/ft-apk"
@@ -35,6 +39,7 @@ jobs:
           unzip -Z1 ft-pdf-debug.apk > entries.txt
           grep -q '^assets/studio/index.html$' entries.txt
           grep -q '^assets/seed/manifest.json$' entries.txt
+          grep -q '^assets/studio/ocr/eng.traineddata.gz$' entries.txt
           grep -q '^assets/studio/assets/pdf.worker' entries.txt
           grep -q '^assets/studio/assets/codec.worker' entries.txt
           rm entries.txt

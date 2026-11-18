@@ -6,8 +6,8 @@ android {
         applicationId 'studio.ftpdf.app'
         minSdk 26
         targetSdk 35
-        versionCode 3
-        versionName '2.0'
+        versionCode 4
+        versionName '3.0'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     buildFeatures { buildConfig true }
@@ -29,6 +29,7 @@ final studio = tasks.register('bundleDeviceStudio', Exec) {
 tasks.named('preBuild').configure { dependsOn(studio) }
 
 dependencies {
+    implementation 'androidx.core:core:1.13.1' // FileProvider for a one-photo camera grant
     implementation 'androidx.webkit:webkit:1.12.1'
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
