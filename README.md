@@ -33,7 +33,7 @@ Use a persistent volume, not an ephemeral deployment filesystem. Back up SQLite 
 
 ### Install the client
 
-Download the **ft-pdf-debug-apk** artifact from a successful **Android debug APK** run in GitHub Actions. Extract the ZIP and install `ft-pdf-debug.apk` (Android 8.0+). The workspace sidebar also links to the downloadable APK.
+Download [**ft-pdf-debug.apk**](public/downloads/ft-pdf-debug.apk) from this branch, or get the **ft-pdf-debug-apk** artifact from a successful **Android debug APK** run in GitHub Actions. Extract the ZIP and install `ft-pdf-debug.apk` (Android 8.0+). The workspace sidebar also links to the downloadable APK.
 
 **Create a PDF without hosting:** launch Ft PDF → **Create PDF** → enter a document title, choose A4 or US Letter, and write/paste text → **Save PDF…**. Choose the destination in Android Files. Text wraps and paginates on-device; leaving the body empty creates a single blank page. You can open the saved file in a PDF reader. No account, internet connection, or workspace URL is required for this flow. Cancelling the picker keeps your draft.
 
@@ -52,7 +52,7 @@ cd android
 
 Output: `android/app/build/outputs/apk/debug/app-debug.apk`. The debug variant also accepts HTTP for local development. From the Android emulator, use `http://10.0.2.2:5173` to reach the host's development server. **Do not use localhost on a physical phone**; use a reachable HTTPS deployment. Release builds require HTTPS. Use your own release-signing process for distribution; no signing credentials are stored in this repository.
 
-The `Android debug APK` workflow builds with JDK 17 and SDK 35 on Android source changes. It runs unit tests, verifies the APK signature with `apksigner`, and publishes the APK and `SHA256SUMS.txt` in the run’s artifacts for 30 days. A separate emulator job creates and renders blank A4 and multipage Unicode Letter PDFs. No signing secrets are required. Debug signatures may differ between builds: if Android rejects an update because of a signature conflict, save any work before uninstalling the previous debug build. Files exported via Android Files are separate from app-private settings.
+The `Android debug APK` workflow builds with JDK 17 and SDK 35 on Android source changes. It runs unit tests, verifies the APK signature with `apksigner`, and publishes the APK and `SHA256SUMS.txt` in the run’s artifacts for 30 days. A separate emulator job creates and renders blank A4 and multipage Unicode Letter PDFs. A source push explicitly marked `[publish-debug-apk]` also publishes the verified binary and checksum under `public/downloads/` on that same branch if both jobs pass; ordinary pushes and PRs only upload Actions artifacts. No signing secrets are required. Debug signatures may differ between builds: if Android rejects an update because of a signature conflict, save any work before uninstalling the previous debug build. Files exported via Android Files are separate from app-private settings.
 
 ### Install without an APK
 
