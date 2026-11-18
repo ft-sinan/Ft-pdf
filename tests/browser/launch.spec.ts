@@ -2,7 +2,13 @@ import { test, expect, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { PDFDocument } from 'pdf-lib';
 async function openFromFiles(page: Page, fixture = 'field-sheets.pdf') {
-  const base64 = (await readFile('tests/fixtures/' + fixture)).toString('base64');
+  const base64 = (
+    fixture === 'outside.txt'
+      ? Buffer.from('\ufeffNotes from Files', 'utf16le')
+      : fixture === 'outside.htm'
+        ? Buffer.from('<h1>Read this locally</h1>')
+        : await readFile('tests/fixtures/' + fixture)
+  ).toString('base64');
   // Only the OS-to-browser file handle is substituted; render, edit and storage are real.
   await page.addInitScript(
     ({ base64, fixture }) => {
@@ -26,8 +32,10 @@ async function openFromFiles(page: Page, fixture = 'field-sheets.pdf') {
     { base64, fixture },
   );
   const manifest = await (await page.request.get('/manifest.webmanifest')).json();
-  const handler = manifest.file_handlers.find(
-    (h: { accept: object }) => 'application/pdf' in h.accept,
+  const handler = manifest.file_handlers.find((h: { accept: Record<string, string[]> }) =>
+    Object.values(h.accept)
+      .flat()
+      .includes('.' + fixture.split('.').pop()),
   );
   await page.goto(handler.action);
 }
@@ -108,7 +116,7 @@ test('external Edit saves a separate copy and does not consume first-run setup',
   await page.getByRole('button', { name: 'PDF tools', exact: true }).click();
   await page.getByRole('button', { name: 'Add blank page' }).click();
   await page.getByRole('button', { name: 'Save a library copy' }).click();
-  await expect(page.getByText('Edited copy saved to your library')).toBeVisible();
+  await expect(page.getByText('Copy saved to your library')).toBeVisible();
   await expect(page.getByLabel('PDF page 1 of 4')).toBeVisible();
   const w = await (await page.request.get('/api/workspace')).json();
   expect(w.documents).toHaveLength(1);
@@ -130,3 +138,35 @@ test('external password challenge belongs to the file, not the app', async ({ pa
   await expect(page.getByLabel('PDF page 1 of 3')).toHaveAttribute('data-rendered', 'true');
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
 });
+for (const [fixture, format, expected] of [
+  ['brief.docx', 'Word', 'Timeline'],
+  ['legacy-word.doc', 'Word', 'second test'],
+  ['outside.txt', 'Plain text', 'Notes from Files'],
+  ['outside.htm', 'HTML', 'Read this locally'],
+] as const) {
+  test(`Open with reads ${fixture} before setup and only saves on request`, async ({ page }) => {
+    const requests: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().includes('/api/')) requests.push(r.url());
+    });
+    await openFromFiles(page, fixture);
+    await expect(page.locator('.editor-title strong')).toHaveText(fixture, { timeout: 20000 });
+    if (format === 'HTML')
+      await expect(page.frameLocator('iframe[sandbox=""]').locator('h1')).toHaveText(expected);
+    else
+      await expect(
+        page.getByLabel(format === 'Word' ? 'Word document content' : 'Plain text content'),
+      ).toContainText(expected);
+    await expect(
+      page.locator('.first-run,.app-shell,[role=dialog],.editor-tools,[contenteditable=true]'),
+    ).toHaveCount(0);
+    expect(requests).toEqual([]);
+    await page.getByLabel('Save to my library').click();
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Copy saved to your library' }),
+    ).toBeVisible();
+    const w = await (await page.request.get('/api/workspace')).json();
+    expect(w.documents).toHaveLength(1);
+    expect(w.user.needsSetup).toBe(true);
+  });
+}

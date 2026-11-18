@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Files,
+  ScanLine,
   Hand,
   Highlighter,
   Minus,
@@ -31,10 +32,11 @@ import {
   type RenderTask,
 } from 'pdfjs-dist';
 import workerURL from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
-import { Doc, readPdf, message } from '../types';
+import { Doc, readPdf, message, onDevice } from '../types';
 import PdfReader from './PdfReader';
 import { Empty, ErrorNote, Modal, Spin } from './UI';
 GlobalWorkerOptions.workerSrc = workerURL;
+const Scanner = lazy(() => import('./Scanner'));
 const PdfTools = lazy(() => import('./PdfTools'));
 type Pt = { x: number; y: number };
 type Tool = 'hand' | 'text' | 'highlight' | 'pen';
@@ -125,7 +127,8 @@ const PdfSurface = forwardRef<
       cancel: () => void;
     } | null>(null),
     [retry, setRetry] = useState(0);
-  const [manage, setManage] = useState(false);
+  const [manage, setManage] = useState(false),
+    [scan, setScan] = useState(false);
   const original = useRef<Uint8Array<ArrayBuffer> | null>(null),
     surface = useRef<HTMLDivElement>(null),
     canvas = useRef<HTMLCanvasElement>(null),
@@ -216,6 +219,7 @@ const PdfSurface = forwardRef<
       draftRef.current = null;
       setTool('hand');
       setManage(false);
+      setScan(false);
     }
   }, [editing]);
   useEffect(() => {
@@ -359,6 +363,28 @@ const PdfSurface = forwardRef<
   ] as const;
   return (
     <div className="pdf-workspace">
+      {editing && scan && (
+        <Suspense
+          fallback={
+            <div className="toast" role="status">
+              Opening scanner…
+            </div>
+          }
+        >
+          <Scanner
+            after={page}
+            saveCopy={!!source}
+            close={() => setScan(false)}
+            finish={async (addition) => {
+              const { insertAfter } = await import('../tools/scanPages');
+              const combined = await insertAfter(await exportFile(), addition, page);
+              await commit(combined);
+              setPage(page + 1);
+              setScan(false);
+            }}
+          />
+        </Suspense>
+      )}
       {editing && (
         <div className="editor-tools pdf-tools">
           <div className="tool-group">
@@ -430,6 +456,18 @@ const PdfSurface = forwardRef<
             <Files size={16} />
             <span>PDF tools</span>
           </button>
+          {onDevice && (
+            <button
+              className="tool-button"
+              aria-label="Add scanned pages"
+              title="Add scanned pages"
+              disabled={busy || d.locked || !pdf}
+              onClick={() => setScan(true)}
+            >
+              <ScanLine size={16} />
+              <span>Add scanned pages</span>
+            </button>
+          )}
           <div className="zoom-tools tool-group">
             <button
               className="icon-btn"

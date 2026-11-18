@@ -84,7 +84,10 @@ export async function encode(type: Kind, name: string, input: string): Promise<E
   }
   return { bytes: new Blob([input]), content: input };
 }
-export async function imported(file: File): Promise<Encoded & { type: Kind; name: string }> {
+export async function imported(
+  file: File,
+  viewOnly = false,
+): Promise<Encoded & { type: Kind; name: string }> {
   if (file.size > max) throw new Error('Files must be 25 MB or smaller.');
   let type = file.name.split('.').pop()?.toLowerCase();
   if (type === 'htm') type = 'html';
@@ -97,8 +100,9 @@ export async function imported(file: File): Promise<Encoded & { type: Kind; name
         bytes,
       ]);
       const content = clean(html);
-      if (type === 'doc') return { type: 'docx', name, ...(await encode('docx', name, content)) };
-      return { type, name, bytes: file, content };
+      if (type === 'doc' && !viewOnly)
+        return { type: 'docx', name, ...(await encode('docx', name, content)) };
+      return { type: 'docx', name, bytes: file, content };
     } catch (e) {
       throw new Error(
         'Unable to read this Word document. ' + (e instanceof Error ? e.message : ''),

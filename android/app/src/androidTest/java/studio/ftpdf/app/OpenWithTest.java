@@ -10,6 +10,9 @@ import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.uiautomator.UiDevice;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.util.zip.*;
 import org.json.*;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -25,13 +28,13 @@ public class OpenWithTest {
     return TestFiles.external(name, "application/pdf", TestFiles.input(fixture));
   }
 
-  private Intent view(Uri uri) {
+  private Intent view(Uri uri, String type) {
     Intent i = new Intent(Intent.ACTION_VIEW)
       .setPackage(app.getPackageName())
-      .setDataAndType(uri, "application/pdf")
+      .setDataAndType(uri, type)
       .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
     assertEquals(
-      "exactly one PDF handler",
+      "exactly one direct reader",
       1,
       app.getPackageManager().queryIntentActivities(i, PackageManager.MATCH_DEFAULT_ONLY).size()
     );
@@ -45,7 +48,11 @@ public class OpenWithTest {
   }
 
   private StudioScreen open(Uri u) {
-    return new StudioScreen(ActivityScenario.<OpenPdfActivity>launch(view(u)));
+    return open(u, "application/pdf");
+  }
+
+  private StudioScreen open(Uri u, String type) {
+    return new StudioScreen(ActivityScenario.<OpenPdfActivity>launch(view(u, type)));
   }
 
   private void reading(StudioScreen reader, String name) throws Exception {
@@ -137,6 +144,112 @@ public class OpenWithTest {
       );
     } finally {
       app.getContentResolver().delete(u, null, null);
+    }
+  }
+
+  @Test
+  public void wordTextAndHtmlReadBeforeSetup() throws Exception {
+    String[][] formats = {
+      {
+        "sinan (1).docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "brief.docx",
+        "Timeline",
+      },
+      { "legacy-word.doc", "application/msword", "legacy-word.doc", "second test" },
+      { "Local note.txt", "text/plain", "", "Notes from Files" },
+      { "Preview.htm", "text/html", "", "<h1>Local page</h1>" },
+    };
+    for (String[] f : formats) {
+      byte[] bytes = f[2].isEmpty()
+        ? f[3].getBytes(StandardCharsets.UTF_8)
+        : TestFiles.bytes(TestFiles.input(f[2]));
+      Uri u = TestFiles.external(f[0], f[1], new ByteArrayInputStream(bytes));
+      try (StudioScreen reader = open(u, f[1])) {
+        reader.value(".editor-title", f[0].substring(0, f[0].lastIndexOf('.')));
+        if (f[1].equals("text/html")) reader.await(
+          "sandboxed file preview",
+          "q('iframe[sandbox]')?.srcdoc.includes('Local page')===true"
+        );
+        else reader.value(f[1].equals("text/plain") ? ".reader-text" : "article.rich-page", f[3]);
+        assertEquals(
+          "false",
+          reader.js(
+            "!!q('.app-shell,.first-run,[role=dialog],.editor-tools,[contenteditable=true]')"
+          )
+        );
+        assertTrue(workspace().getJSONObject("user").getBoolean("needsSetup"));
+        assertEquals(0, workspace().getJSONArray("documents").length());
+      } finally {
+        app.getContentResolver().delete(u, null, null);
+      }
+    }
+  }
+
+  @Test
+  public void wordEditsSaveAsSeparateDocxWithoutDisturbingDraft() throws Exception {
+    try (StudioScreen studio = new StudioScreen()) {
+      studio.newDoc("Text", "Draft behind Word");
+      studio.button("Create document");
+      studio.edit();
+      studio.fill("textarea.text-page", "Unfinished studio notes");
+      for (boolean legacy : new boolean[] { false, true }) {
+        String mime = legacy
+            ? "application/msword"
+            : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          name = legacy ? "Binary brief.doc" : "sinan (1).docx",
+          mark = legacy ? "Converted field notes" : "Edited local proposal";
+        byte[] original = TestFiles.bytes(
+          TestFiles.input(legacy ? "legacy-word.doc" : "brief.docx")
+        );
+        Uri u = TestFiles.external(name, mime, new ByteArrayInputStream(original));
+        int before = workspace().getJSONArray("documents").length();
+        try (StudioScreen reader = open(u, mime)) {
+          reader.value("article.rich-page", legacy ? "second test" : "Timeline");
+          assertEquals(before, workspace().getJSONArray("documents").length());
+          reader.button("Edit");
+          reader.fill("[contenteditable=true]", mark);
+          assertEquals(before, workspace().getJSONArray("documents").length());
+          reader.button("Save a copy");
+          reader.button("Back to reader");
+          reader.reader();
+          reader.value("article.rich-page", mark);
+          JSONArray docs = workspace().getJSONArray("documents");
+          assertEquals(before + 1, docs.length());
+          String id = null;
+          for (int i = 0; i < docs.length(); i++) {
+            JSONObject doc = docs.getJSONObject(i);
+            if (
+              doc.getString("name").equals(name.substring(0, name.lastIndexOf('.'))) &&
+              doc.getString("type").equals("docx")
+            ) id = doc.getString("id");
+          }
+          assertNotNull("A new Word copy", id);
+          try (
+            ZipInputStream zip = new ZipInputStream(
+              DeviceLibrary.instance(app).read(id, false).stream
+            )
+          ) {
+            boolean found = false;
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null)
+              if (entry.getName().equals("word/document.xml")) {
+                found = new String(TestFiles.bytes(zip), StandardCharsets.UTF_8).contains(mark);
+                break;
+              }
+            assertTrue("Saved DOCX contains edit", found);
+          }
+          assertArrayEquals(original, TestFiles.bytes(app.getContentResolver().openInputStream(u)));
+        } finally {
+          app.getContentResolver().delete(u, null, null);
+        }
+      }
+      os.executeShellCommand(
+        "am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n " +
+          app.getPackageName() +
+          "/.MainActivity"
+      );
+      studio.value("textarea.text-page", "Unfinished studio notes");
     }
   }
 

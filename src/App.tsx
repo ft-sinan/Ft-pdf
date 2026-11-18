@@ -68,15 +68,17 @@ import {
 } from './components/Forms';
 import Welcome, { PracticeFile } from './components/Welcome';
 import { saveProfile } from './profile';
-import { launchQueue } from './externalPdf';
+import { launchQueue } from './externalFile';
 import { DocTable, Library, SectionTitle } from './components/Library';
 const Editor = lazy(() => import('./components/Editor'));
 const PhoneHome = lazy(() => import('./components/PhoneHome'));
+const Scanner = lazy(() => import('./components/Scanner'));
 const PhotoForm = lazy(() => import('./components/PhotoForm'));
 const Toolbox = lazy(() => import('./components/Toolbox'));
 type Dialog = {
   kind:
     | 'new'
+    | 'scan'
     | 'photos'
     | 'toolbox'
     | 'android'
@@ -795,6 +797,7 @@ export default function App() {
                       <PhoneHome
                         key={w.user.id}
                         owner={w.user.id}
+                        scanner={() => modal({ kind: 'scan' })}
                         photos={() => modal({ kind: 'photos' })}
                         tools={() => modal({ kind: 'toolbox' })}
                         open={(d) => {
@@ -1004,40 +1007,63 @@ export default function App() {
           )}
         </Popup>
       )}
-      {onDevice && (dialog?.kind === 'photos' || dialog?.kind === 'toolbox') && (
-        <Suspense
-          fallback={
-            <div className="toast" role="status">
-              <Spin />
-              Opening tool…
-            </div>
-          }
-        >
-          {dialog.kind === 'photos' ? (
-            <PhotoForm
-              collections={collections}
-              initial={context}
-              close={close}
-              done={(d) => {
-                upsert(d);
-                notify('Image PDF created');
-                nav(view, d.id);
-              }}
-            />
-          ) : (
-            <Toolbox
-              docs={active}
-              close={close}
-              photos={() => modal({ kind: 'photos' })}
-              done={(d) => {
-                upsert(d);
-                notify('New document saved');
-                nav(view, d.id);
-              }}
-            />
-          )}
-        </Suspense>
-      )}
+      {onDevice &&
+        (dialog?.kind === 'scan' || dialog?.kind === 'photos' || dialog?.kind === 'toolbox') && (
+          <Suspense
+            fallback={
+              <div className="toast" role="status">
+                <Spin />
+                Opening tool…
+              </div>
+            }
+          >
+            {dialog.kind === 'scan' ? (
+              <Scanner
+                close={close}
+                finish={async (pdf, pages, name) => {
+                  const { store } = await import('./device/bridge');
+                  const d = await store<Doc>(
+                    {
+                      expectedOwner: w.user.id,
+                      name,
+                      type: 'pdf',
+                      pages,
+                      collectionId: context || null,
+                    },
+                    pdf,
+                    '',
+                  );
+                  upsert(d);
+                  close();
+                  notify('Scanned PDF saved');
+                  nav(view, d.id);
+                }}
+              />
+            ) : dialog.kind === 'photos' ? (
+              <PhotoForm
+                collections={collections}
+                initial={context}
+                close={close}
+                done={(d) => {
+                  upsert(d);
+                  notify('Image PDF created');
+                  nav(view, d.id);
+                }}
+              />
+            ) : (
+              <Toolbox
+                docs={active}
+                close={close}
+                photos={() => modal({ kind: 'photos' })}
+                done={(d) => {
+                  upsert(d);
+                  notify('New document saved');
+                  nav(view, d.id);
+                }}
+              />
+            )}
+          </Suspense>
+        )}
       {dialog?.kind === 'new' && (
         <NewForm
           photos={() => modal({ kind: 'photos' })}

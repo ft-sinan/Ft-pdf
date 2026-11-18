@@ -16,6 +16,18 @@ export default defineConfig(({ mode }) => ({
         : []),
     ],
   },
+  // Avoid a dev-server dependency reload halfway through the first file-handle launch.
+  optimizeDeps: {
+    include: [
+      'mammoth/mammoth.browser.min.js',
+      'word-extractor/lib/buffer-reader.js',
+      'word-extractor/lib/word-ole-extractor.js',
+      'buffer',
+      'process/browser',
+      'fflate',
+      'docx',
+    ],
+  },
   worker: { format: 'es' },
   server: {
     host: '0.0.0.0',

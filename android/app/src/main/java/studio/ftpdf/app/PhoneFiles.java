@@ -4,17 +4,19 @@ import android.Manifest;
 import android.content.*;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
 import android.os.*;
 import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
 import android.provider.DocumentsContract;
 import android.provider.DocumentsContract.Document;
+import android.provider.MediaStore;
 import java.io.*;
 import java.util.*;
 import org.json.*;
 
-/** Read-only index. The renderer sees short-lived opaque IDs, never a filesystem or content-URI API. */
+/** Read-only index. The renderer sees profile-scoped opaque IDs, never a filesystem or content-URI API. */
 final class PhoneFiles {
 
   private static final int LIMIT = 4000,
@@ -26,11 +28,105 @@ final class PhoneFiles {
   private String indexed = "";
   private Map<String, Entry> entries = new LinkedHashMap<>();
   private int generation;
-  private String note = "";
+  private String note = "",
+    stamp = "";
+  private long checked = 0;
+
+  static void schema(SQLiteDatabase db) {
+    db.execSQL(
+      "CREATE TABLE IF NOT EXISTS phone_index(owner TEXT NOT NULL REFERENCES users(id), id TEXT NOT NULL, scope TEXT NOT NULL, locator TEXT NOT NULL, disk INTEGER NOT NULL, name TEXT NOT NULL, folder TEXT NOT NULL, size INTEGER NOT NULL, modified INTEGER NOT NULL, first_modified INTEGER NOT NULL, added INTEGER NOT NULL, PRIMARY KEY(owner,id))"
+    );
+    db.execSQL(
+      "CREATE TABLE IF NOT EXISTS phone_checks(owner TEXT PRIMARY KEY REFERENCES users(id), checked INTEGER NOT NULL, stamp TEXT NOT NULL, note TEXT NOT NULL)"
+    );
+  }
+
+  private SQLiteDatabase db() {
+    return library.getWritableDatabase();
+  }
+
+  private void restore(String owner) {
+    if (indexed.equals(owner)) return;
+    Map<String, Entry> rows = new LinkedHashMap<>();
+    try (
+      Cursor c = db().rawQuery(
+        "SELECT id,scope,locator,disk,name,folder,size,modified,added,first_modified FROM phone_index WHERE owner=? ORDER BY added,first_modified DESC,name,id",
+        new String[] { owner }
+      )
+    ) {
+      while (c.moveToNext()) {
+        boolean disk = c.getInt(3) != 0;
+        String scope = c.getString(1),
+          loc = c.getString(2);
+        Entry e = new Entry(
+          c.getString(4),
+          c.getString(5),
+          c.getLong(6),
+          c.getLong(7),
+          disk ? new File(loc) : null,
+          disk ? new File(scope) : null,
+          disk ? null : Uri.parse(loc),
+          disk ? null : Uri.parse(scope)
+        );
+        e.id = c.getString(0);
+        e.added = c.getLong(8);
+        e.firstModified = c.getLong(9);
+        rows.put(e.id, e);
+      }
+    }
+    try (
+      Cursor c = db().rawQuery(
+        "SELECT checked,stamp,note FROM phone_checks WHERE owner=?",
+        new String[] { owner }
+      )
+    ) {
+      boolean ok = c.moveToFirst();
+      checked = ok ? c.getLong(0) : 0;
+      stamp = ok ? c.getString(1) : "";
+      note = ok ? c.getString(2) : "";
+    }
+    entries = rows;
+    indexed = owner;
+  }
+
+  private String storageStamp(String owner) {
+    boolean broad = prefs.getBoolean("scan:" + owner, false) && allowed();
+    StringBuilder s = new StringBuilder(broad ? "all" : "folders");
+    for (String t : new TreeSet<>(readableTrees(owner))) s.append('|').append(t);
+    if (broad && Build.VERSION.SDK_INT >= 30) try {
+      for (String v : new TreeSet<>(MediaStore.getExternalVolumeNames(app)))
+        s.append('|')
+          .append(v)
+          .append(':')
+          .append(MediaStore.getVersion(app, v))
+          .append(':')
+          .append(MediaStore.getGeneration(app, v));
+    } catch (RuntimeException ignored) {
+      /* Folder providers and older devices can always be refreshed manually. */
+    }
+    return key(s.toString());
+  }
 
   private static final class Entry {
 
-    String id = UUID.randomUUID().toString();
+    String id;
+    long added, firstModified;
+
+    String scope() {
+      return file == null ? tree.toString() : root.getPath();
+    }
+
+    boolean same(Entry e) {
+      return (
+        name.equals(e.name) &&
+        folder.equals(e.folder) &&
+        time == e.time &&
+        size == e.size &&
+        locator().equals(e.locator()) &&
+        scope().equals(e.scope())
+      );
+    }
+
     final String name, folder;
     final long size, time;
     final File file, root;
@@ -88,6 +184,7 @@ final class PhoneFiles {
   }
 
   synchronized void enable(String owner, boolean enabled) {
+    if (!enabled) db().delete("phone_index", "owner=? AND disk=1", new String[] { owner });
     prefs
       .edit()
       .putBoolean("scan:" + owner, enabled)
@@ -136,6 +233,7 @@ final class PhoneFiles {
     for (String t : s) if (key(t).equals(id)) found = t;
     if (found == null) return;
     s.remove(found);
+    db().delete("phone_index", "owner=? AND scope=?", new String[] { owner, found });
     prefs
       .edit()
       .putStringSet("trees:" + owner, s)
@@ -151,7 +249,7 @@ final class PhoneFiles {
     clear();
   }
 
-  private static boolean supported(String name) {
+  static boolean supported(String name) {
     int dot = name.lastIndexOf('.');
     return (
       dot >= 0 &&
@@ -171,7 +269,11 @@ final class PhoneFiles {
     Set<File> list = new LinkedHashSet<>();
     if (Build.VERSION.SDK_INT >= 30) {
       for (StorageVolume v : app.getSystemService(StorageManager.class).getStorageVolumes())
-        if (v.getDirectory() != null) list.add(v.getDirectory().getCanonicalFile());
+        if (
+          v.getDirectory() != null &&
+          (Environment.MEDIA_MOUNTED.equals(v.getState()) ||
+            Environment.MEDIA_MOUNTED_READ_ONLY.equals(v.getState()))
+        ) list.add(v.getDirectory().getCanonicalFile());
     } else {
       list.add(Environment.getExternalStorageDirectory().getCanonicalFile());
       for (File f : app.getExternalFilesDirs(null)) {
@@ -187,6 +289,7 @@ final class PhoneFiles {
   private static final class Budget {
 
     int visited;
+    boolean unreadable;
     final long end = SystemClock.elapsedRealtime() + 18000;
 
     boolean exceeds(int size) {
@@ -205,7 +308,10 @@ final class PhoneFiles {
     while (!todo.isEmpty() && !b.exceeds(out.size())) {
       File dir = todo.remove();
       File[] children = dir.listFiles();
-      if (children == null) continue;
+      if (children == null) {
+        b.unreadable = true;
+        continue;
+      }
       for (File f : children) {
         if (b.exceeds(out.size())) break;
         b.visited++;
@@ -264,7 +370,9 @@ final class PhoneFiles {
             null
           )
       ) {
-        if (c == null) throw new IOException();
+        if (
+          c == null || c.getExtras().getBoolean(DocumentsContract.EXTRA_LOADING, false)
+        ) throw new IOException();
         while (!b.exceeds(out.size()) && c.moveToNext()) {
           b.visited++;
           String id = c.getString(0),
@@ -273,8 +381,8 @@ final class PhoneFiles {
           if (Document.MIME_TYPE_DIR.equals(c.getString(2))) todo.add(new String[] { id, name });
           else if (supported(name)) {
             Uri u = DocumentsContract.buildDocumentUriUsingTree(tree, id);
-            out.put(
-              tree.getAuthority() + ":" + id,
+            out.putIfAbsent(
+              identity(tree, id),
               new Entry(
                 name,
                 dir[1],
@@ -292,54 +400,134 @@ final class PhoneFiles {
     }
   }
 
-  JSONObject scan(String owner) throws Exception {
-    int ticket;
+  // A file visible via two grants is one row. This identity is never used as a read grant.
+  private String identity(Uri tree, String id) {
+    if ("com.android.externalstorage.documents".equals(tree.getAuthority())) {
+      int i = id.indexOf(':');
+      if (i >= 0) {
+        String volume = id.substring(0, i),
+          relative = id.substring(i + 1);
+        if ("primary".equalsIgnoreCase(volume)) return new File(
+          Environment.getExternalStorageDirectory(),
+          relative
+        ).getPath();
+        if (Build.VERSION.SDK_INT >= 30) for (StorageVolume v : app
+          .getSystemService(StorageManager.class)
+          .getStorageVolumes())
+          if (volume.equalsIgnoreCase(v.getUuid()) && v.getDirectory() != null) return new File(
+            v.getDirectory(),
+            relative
+          ).getPath();
+      }
+    }
+    return tree.getAuthority() + ":" + id;
+  }
+
+  JSONObject scan(String owner, boolean force) throws Exception {
+    final int ticket;
+    final String token = storageStamp(owner);
     synchronized (this) {
+      restore(owner);
+      if (!force && !due(token)) return page(owner, "", 0, false, false);
       ticket = ++generation;
     }
     boolean broad = prefs.getBoolean("scan:" + owner, false) && allowed();
     Map<String, Entry> found = new HashMap<>();
+    Set<String> complete = new HashSet<>();
     Budget b = new Budget();
-    String warning = "";
-    if (broad) {
-      for (File root : roots()) disk(root, found, b);
+    boolean partial = false;
+    if (broad) for (File root : roots()) {
+      b.unreadable = false;
+      try {
+        disk(root, found, b);
+      } catch (IOException | SecurityException unavailable) {
+        b.unreadable = true;
+      }
+      if (!b.unreadable && !b.exceeds(found.size())) complete.add(root.getPath());
+      else partial = true;
     }
-    for (String t : trees(owner)) {
+    for (String t : new TreeSet<>(readableTrees(owner))) {
       Uri uri = Uri.parse(t);
-      if (broad && "com.android.externalstorage.documents".equals(uri.getAuthority())) continue;
       try {
         tree(uri, found, b);
-      } catch (Exception e) {
-        warning = "A linked folder is unavailable. Reconnect it or remove it from Sources.";
+        if (!b.exceeds(found.size())) complete.add(t);
+        else partial = true;
+      } catch (Exception unavailable) {
+        partial = true;
       }
     }
-    List<Entry> sorted = new ArrayList<>(found.values());
-    sorted.sort(
-      Comparator.comparingLong((Entry e) -> e.time)
-        .reversed()
-        .thenComparing(e -> e.name)
-    );
     synchronized (this) {
-      if (ticket == generation && owner.equals(library.currentOwner())) {
-        // Keep displayed IDs usable while a refresh of the same source finishes.
-        Map<String, String> previous = new HashMap<>();
-        if (indexed.equals(owner)) for (Entry old : entries.values())
-          previous.put(old.locator(), old.id);
-        entries = new LinkedHashMap<>();
-        for (Entry e : sorted) {
-          e.id = previous.getOrDefault(e.locator(), e.id);
-          entries.put(e.id, e);
+      if (ticket != generation || !owner.equals(library.currentOwner())) throw new IOException(
+        "Phone sources changed. Refresh to check again."
+      );
+      restore(owner);
+      long now = Math.max(checked + 1, System.currentTimeMillis());
+      Set<String> seen = new HashSet<>();
+      String warning = partial
+        ? "Some folders could not be fully checked. Previously found files are kept."
+        : "";
+      // A scan is a metadata diff, never a re-import. Commit the diff and its checkpoint together.
+      SQLiteDatabase db = db();
+      db.beginTransaction();
+      try {
+        for (Map.Entry<String, Entry> item : found.entrySet()) {
+          Entry e = item.getValue();
+          e.id = key(owner + ":" + item.getKey());
+          seen.add(e.id);
+          Entry old = entries.get(e.id);
+          if (old != null && e.same(old)) continue;
+          e.added = old != null ? old.added : checked == 0 ? 0 : now;
+          db.execSQL(
+            "INSERT OR REPLACE INTO phone_index(owner,id,scope,locator,disk,name,folder,size,modified,first_modified,added) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            new Object[] {
+              owner,
+              e.id,
+              e.scope(),
+              e.locator(),
+              e.file == null ? 0 : 1,
+              e.name,
+              e.folder,
+              e.size,
+              e.time,
+              old == null ? e.time : old.firstModified,
+              e.added,
+            }
+          );
         }
-        indexed = owner;
-        note = b.exceeds(found.size())
-          ? "Showing a bounded scan. Choose a smaller folder to focus the results."
-          : warning;
+        for (Entry old : entries.values())
+          if (complete.contains(old.scope()) && !seen.contains(old.id)) db.delete(
+            "phone_index",
+            "owner=? AND id=?",
+            new String[] { owner, old.id }
+          );
+        db.execSQL("INSERT OR REPLACE INTO phone_checks VALUES(?,?,?,?)", new Object[] {
+          owner,
+          now,
+          token,
+          warning,
+        });
+        db.setTransactionSuccessful();
+      } finally {
+        db.endTransaction();
       }
-      return page(owner, "", 0);
+      indexed = "";
+      return page(owner, "", 0, false, false);
     }
   }
 
-  synchronized JSONObject page(String owner, String query, int offset) throws Exception {
+  private boolean due(String token) {
+    long age = System.currentTimeMillis() - checked;
+    return checked == 0 || !stamp.equals(token) || age < 0 || age > 15 * 60 * 1000;
+  }
+
+  synchronized JSONObject page(
+    String owner,
+    String query,
+    int offset,
+    boolean onlyNew,
+    boolean check
+  ) throws Exception {
+    restore(owner);
     boolean allowed = allowed(),
       enabled = prefs.getBoolean("scan:" + owner, false);
     Set<String> linked = trees(owner),
@@ -353,10 +541,17 @@ final class PhoneFiles {
           .put("name", display(Uri.parse(t)))
           .put("readable", readable.contains(t))
       );
-    int count = 0;
+    Set<File> mounted = allowed && enabled ? roots() : Collections.emptySet();
+    int count = 0,
+      newCount = 0;
     String q = query.trim().toLowerCase(Locale.ROOT);
     if (indexed.equals(owner)) for (Entry e : entries.values()) {
-      if (e.file != null ? !(allowed && enabled) : !readable.contains(e.tree.toString())) continue;
+      if (
+        e.file != null ? !mounted.contains(e.root) : !readable.contains(e.tree.toString())
+      ) continue;
+      boolean fresh = e.added > 0 && e.added == checked;
+      if (fresh) newCount++;
+      if (onlyNew && !fresh) continue;
       if (!(e.name + " " + e.folder).toLowerCase(Locale.ROOT).contains(q)) continue;
       if (count++ >= offset && files.length() < PAGE) files.put(e.json());
     }
@@ -366,17 +561,25 @@ final class PhoneFiles {
       .put("folders", folders)
       .put("files", files)
       .put("total", count)
+      .put("checked", checked)
+      .put("newCount", newCount)
+      .put(
+        "due",
+        check && ((enabled && allowed) || !readable.isEmpty()) && due(storageStamp(owner))
+      )
       .put("notice", indexed.equals(owner) ? note : "");
   }
 
   synchronized InputStream open(String id) throws Exception {
     String owner = library.currentOwner();
+    restore(owner);
     Entry e = entries.get(id);
     if (!owner.equals(indexed) || e == null) throw new IOException("Refresh the phone file list.");
     if (e.file != null) {
       if (
         !allowed() ||
         !prefs.getBoolean("scan:" + owner, false) ||
+        !roots().contains(e.root) ||
         !e.file.getAbsoluteFile().equals(e.file.getCanonicalFile()) ||
         !e.file.getCanonicalPath().startsWith(e.root.getPath() + File.separator) ||
         e.file.length() > DeviceLibrary.MAX

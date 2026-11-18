@@ -4,15 +4,12 @@ import static org.junit.Assert.*;
 
 import android.content.*;
 import android.content.pm.PackageManager;
-import android.net.Uri;
 import android.os.SystemClock;
-import android.provider.MediaStore;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.uiautomator.*;
 import java.io.*;
 import java.util.regex.Pattern;
-import java.util.zip.*;
 import org.json.*;
 import org.junit.*;
 import org.junit.runner.RunWith;
@@ -21,8 +18,7 @@ import org.junit.runner.RunWith;
 public class OfflineStudioTest {
 
   private StudioScreen ui;
-  private final String word = "[aria-label='Word document content']",
-    text = "[aria-label='Plain text content']",
+  private final String text = "[aria-label='Plain text content']",
     html = "[aria-label='HTML source code']";
   private final Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
 
@@ -56,15 +52,6 @@ public class OfflineStudioTest {
       copy(src, out);
       return out.toString("UTF-8");
     }
-  }
-
-  private void view(Uri u, String mime) {
-    app.startActivity(
-      new Intent(Intent.ACTION_VIEW)
-        .setClass(app, MainActivity.class)
-        .setDataAndType(u, mime)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    );
   }
 
   @Test
@@ -103,50 +90,6 @@ public class OfflineStudioTest {
       }
     } finally {
       f.delete();
-    }
-  }
-
-  @Test
-  public void wordFilesOpenWithAndroidEditAndSerializeOffline() throws Exception {
-    // Both streams enter via actual content URIs and Android's VIEW intent, not an HTTP upload.
-    for (boolean legacy : new boolean[] { false, true }) {
-      String mime = legacy
-        ? "application/msword"
-        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-      Uri u = TestFiles.external(
-        legacy ? "legacy-word.doc" : "Imported brief.docx",
-        mime,
-        TestFiles.input(legacy ? "legacy-word.doc" : "brief.docx")
-      );
-      try {
-        view(u, mime);
-        ui.button("Import 1 file");
-        ui.value(word, legacy ? "second test" : "Timeline");
-        String mark = legacy ? "Converted field notes" : "Edited local proposal";
-        ui.edit();
-        ui.fill(word, mark);
-        ui.save();
-        ui.closeDocument();
-        ui.button(legacy ? "Open legacy-word.docx" : "Open Imported brief.docx");
-        ui.value(word, mark);
-        ui.reload();
-        ui.value(word, mark);
-        try (ZipInputStream zip = new ZipInputStream(db().read(ui.documentId(), false).stream)) {
-          boolean ok = false;
-          ZipEntry e;
-          while ((e = zip.getNextEntry()) != null) {
-            if (!e.getName().equals("word/document.xml")) continue;
-            ByteArrayOutputStream xml = new ByteArrayOutputStream();
-            copy(zip, xml);
-            ok = xml.toString("UTF-8").contains(mark);
-            break;
-          }
-          assertTrue("Real DOCX contains the edit", ok);
-        }
-        ui.closeDocument();
-      } finally {
-        app.getContentResolver().delete(u, null, null);
-      }
     }
   }
 

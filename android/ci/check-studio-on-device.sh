@@ -47,6 +47,7 @@ failures=0
 # Keep diagnostic coverage independent. Every failed case still blocks publication.
 required_case() { (run_case "$@") || failures=1; }
 adb shell pm clear "$pkg"
+required_case "$pkg.OpenWithTest#wordTextAndHtmlReadBeforeSetup" 1 word-first-open
 required_case "$pkg.OpenWithTest#firstOpenReadsWithoutSetupOrImport" 1 open-with-cold
 adb shell am force-stop "$pkg"
 required_case "$pkg.LocalProfileTest#createProfileAndCollection" 1 first-launch
@@ -61,7 +62,7 @@ required_case "$pkg.LibraryUpgradeTest" 1 existing-library-upgrade
 required_case "$pkg.OfflineStudioTest#createEditAndReopenPDF" 1 pdf-editor
 required_case "$pkg.OfflineStudioTest#htmlSourceIsEditableAndPreviewIsSandboxed" 1 html-editor
 required_case "$pkg.OfflineStudioTest#textRoundTripsThroughTheSystemFilesPicker" 1 files-roundtrip
-required_case "$pkg.OfflineStudioTest#wordFilesOpenWithAndroidEditAndSerializeOffline" 1 word-formats
+required_case "$pkg.OpenWithTest#wordEditsSaveAsSeparateDocxWithoutDisturbingDraft" 1 word-formats
 required_case "$pkg.ReaderSpaceTest#scrollPdfThenEditAndReadAgain" 1 scroll-reader
 required_case "$pkg.ReaderSpaceTest#creatorCardOpensOnlyTheSelectedContactOutsideStudio" 1 creator-space
 required_case "$pkg.LocalPdfWriterTest" 2 pdf-renderer
@@ -69,8 +70,15 @@ required_case "$pkg.LocalPdfWriterTest" 2 pdf-renderer
 adb shell pm clear "$pkg"
 adb shell appops set --uid "$pkg" MANAGE_EXTERNAL_STORAGE allow
 required_case "$pkg.PhoneToolsTest#sharedFilesAppearOnHomeAndOriginalIsUntouched" 1 shared-storage
+required_case "$pkg.IndexRestartTest#rememberFirstScan" 1 remember-index
+adb shell am force-stop "$pkg"
+required_case "$pkg.IndexRestartTest#coldListThenOnlyNewFiles" 1 cold-index-delta
 adb shell appops set --uid "$pkg" MANAGE_EXTERNAL_STORAGE deny
 required_case "$pkg.PhoneToolsTest#folderGrantWorksWithoutAllFilesAccess" 1 folder-access
+required_case "$pkg.ScannerTest#denyingCameraKeepsTheLibraryUsable" 1 denied-camera
+adb shell pm grant "$pkg" android.permission.CAMERA
+required_case "$pkg.ScannerTest#realCameraLivePreviewAndManualShutter" 1 live-camera
+required_case "$pkg.ScannerTest#autoCaptureReviewAndInsertProduceOrderedPdfPages" 1 auto-scan-insert
 required_case "$pkg.PhoneToolsTest#orderAndRotatePhotosFromAndroidFiles" 1 image-pdf
 required_case "$pkg.PhoneToolsTest#mergeAndExportSplitZipViaFiles" 1 toolbox-export
 required_case "$pkg.PhoneToolsTest#offlineOcrProducesSearchablePages" 1 offline-ocr

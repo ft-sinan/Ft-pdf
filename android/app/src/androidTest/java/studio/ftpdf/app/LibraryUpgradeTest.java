@@ -20,7 +20,10 @@ public class LibraryUpgradeTest {
       old.execSQL("INSERT INTO users VALUES('existing','My workspace',NULL,NULL,NULL,'forest')");
       old.execSQL("CREATE TABLE docs(id TEXT PRIMARY KEY,owner TEXT,name TEXT,asset_key TEXT)");
       old.execSQL("INSERT INTO docs VALUES('kept','existing','My edited report','unaltered')");
-      DeviceLibrary.instance(TestFiles.app).onUpgrade(old, 2, 3);
+      DeviceLibrary.instance(TestFiles.app).onUpgrade(old, 2, 4);
+      try (Cursor c = old.rawQuery("SELECT * FROM phone_index", null)) {
+        assertFalse(c.moveToFirst());
+      }
       try (
         Cursor c = old.rawQuery(
           "SELECT u.name,u.theme,u.needs_setup,u.birth_date,d.name,d.asset_key FROM users u JOIN docs d ON d.owner=u.id",

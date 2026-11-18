@@ -292,10 +292,10 @@ test('Creator Space credits Sinan and provides the flip, badge details and conta
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'Creator Space', exact: true }).click();
   const card = page.getByRole('region', { name: 'Creator Space' });
-  await expect(card.getByRole('heading', { name: 'Sinan', exact: true })).toBeVisible();
+  await expect(card.getByRole('heading', { name: 'Made by Sinan', exact: true })).toBeVisible();
   await card.getByRole('button', { name: 'Flip creator emblem' }).click();
   await expect(card.getByRole('heading', { name: 'Read first.' })).toBeVisible();
-  await expect(card.getByRole('heading', { name: 'Sinan', exact: true })).toBeVisible();
+  await expect(card.getByRole('heading', { name: 'Made by Sinan', exact: true })).toBeVisible();
   await card.getByRole('button', { name: 'Web edition', exact: true }).click();
   await expect(card.locator('.badge-detail')).toContainText('workspace server');
   await expect(card.getByRole('link', { name: 'Open GitHub' })).toHaveAttribute(

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type Doc, type Workspace, message, fileName, onDevice } from '../types';
-import { selectedPdf, type PdfSource } from '../externalPdf';
+import { api, type Doc, type Workspace, message, fileName, onDevice, type Kind } from '../types';
+import { selectedFile, type FileSource } from '../externalFile';
 import Editor from './Editor';
 import { Confirm } from './Forms';
 import { Empty, Spin } from './UI';
@@ -12,27 +12,43 @@ const noop = () => {},
   };
 /** ACTION_VIEW is not an import. Read the OS-granted stream directly; neither opening,
  * scrolling nor cancelling an edit needs an account, file picker or library storage. */
-export default function OpenPdf() {
+export default function OpenFile() {
   const [doc, setDoc] = useState<Doc | null>(null),
     [copy, setCopy] = useState<Doc | null>(null),
     [failed, fail] = useState(''),
     [retry, again] = useState(0),
     [notice, notify] = useState(''),
     [trash, askTrash] = useState(false);
-  const [source, setSource] = useState<PdfSource | null>(null);
+  const [source, setSource] = useState<FileSource | null>(null);
+  const [text, setText] = useState<string>();
   const back = useRef<(() => void) | null>(null),
     owner = useRef('');
   useEffect(() => {
     let live = true;
     fail('');
-    selectedPdf()
-      .then((item) => {
+    const abort = new AbortController();
+    selectedFile()
+      .then(async (item) => {
+        const ext = item.name.split('.').pop()?.toLowerCase() || '';
+        if (!['pdf', 'doc', 'docx', 'txt', 'htm', 'html'].includes(ext))
+          throw Error('This document format is not supported.');
+        let type: Kind = ext === 'doc' ? 'docx' : ext === 'htm' ? 'html' : (ext as Kind);
+        if (type !== 'pdf') {
+          const input = await (await item.read(abort.signal)).blob();
+          if (!live) return;
+          const { imported } = await import('../device/formats');
+          const parsed = await imported(new File([input], item.name), true);
+          if (!live) return;
+          setText(parsed.content);
+          type = parsed.type;
+          item = { ...item, read: async () => new Response(input), size: input.size };
+        }
         if (live) {
           setSource(item);
           setDoc({
             id: item.id,
-            name: (item.name || 'Document').replace(/\.pdf$/i, '') || 'Document',
-            type: 'pdf',
+            name: (item.name || 'Document').replace(/\.[^.]+$/, '') || 'Document',
+            type,
             size: item.size,
             locked: false,
             pages: null,
@@ -51,6 +67,7 @@ export default function OpenPdf() {
       });
     return () => {
       live = false;
+      abort.abort();
     };
   }, [retry]);
   useEffect(() => {
@@ -85,7 +102,7 @@ export default function OpenPdf() {
   if (failed)
     return (
       <Empty
-        title="Could not open PDF"
+        title="Could not open document"
         body={failed}
         action={
           <>
@@ -103,15 +120,24 @@ export default function OpenPdf() {
     return (
       <div className="editor-loading" role="status">
         <Spin />
-        Opening PDF…
+        Opening document…
       </div>
     );
+  const addCopy = async (bytes: Blob, name: string) => {
+    const form = new FormData();
+    form.append('file', bytes, name);
+    form.append('name', name);
+    return api<Doc>('/documents/import', 'POST', form, { 'X-Ft-Owner': owner.current });
+  };
+  const beginEdit = async () => {
+    owner.current = (await api<Workspace>('/workspace')).user.id;
+  };
   return (
     <>
       <Editor
         d={copy || doc}
         close={close}
-        closeLabel="Close PDF"
+        closeLabel={doc.type === 'pdf' ? 'Close PDF' : 'Close document'}
         backAction={back}
         onDirty={noop}
         notify={notify}
@@ -121,17 +147,27 @@ export default function OpenPdf() {
             : {
                 read: source.read,
                 protection,
-                beginEdit: async () => {
-                  const w = await api<Workspace>('/workspace');
-                  owner.current = w.user.id;
+                name: source.name,
+                text,
+                beginEdit,
+                keep: async () => {
+                  await beginEdit();
+                  const bytes = await (await source.read(new AbortController().signal)).blob();
+                  return addCopy(
+                    bytes,
+                    doc.name.slice(0, 130) + '.' + source.name.split('.').pop()!.toLowerCase(),
+                  );
                 },
-                saveCopy: async (blob) => {
-                  const form = new FormData();
-                  form.append('file', blob, doc.name.slice(0, 130) + '.pdf');
-                  form.append('name', doc.name.slice(0, 130) + '.pdf');
-                  return api<Doc>('/documents/import', 'POST', form, {
-                    'X-Ft-Owner': owner.current,
-                  });
+                saveCopy: async (body) => {
+                  const bytes =
+                    body instanceof Blob
+                      ? body
+                      : (
+                          await (
+                            await import('../device/formats')
+                          ).encode(doc.type, doc.name, body.content)
+                        ).bytes;
+                  return addCopy(bytes, doc.name.slice(0, 130) + '.' + doc.type);
                 },
               }
         }
@@ -139,7 +175,7 @@ export default function OpenPdf() {
         onSaved={(d) => {
           setCopy(d);
           changed();
-          notify(copy ? 'Changes saved' : 'Edited copy saved to your library');
+          notify(copy ? 'Changes saved' : 'Copy saved to your library');
         }}
       />
       {trash && copy && (

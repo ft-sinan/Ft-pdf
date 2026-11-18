@@ -12,7 +12,7 @@ import {
   Folder,
   ShieldCheck,
   Palette,
-  Sparkles,
+  Feather,
   UserRound,
 } from 'lucide-react';
 import {
@@ -751,7 +751,7 @@ export function Settings({
           className={tab === 'creator' ? 'active' : ''}
           onClick={() => setTab('creator')}
         >
-          <Sparkles size={15} />
+          <Feather size={15} />
           Creator Space
         </button>
       </div>

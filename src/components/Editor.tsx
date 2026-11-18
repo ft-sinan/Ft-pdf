@@ -4,6 +4,7 @@ import {
   Pencil,
   Trash2,
   BookOpen,
+  BookPlus,
   Bold,
   Check,
   Code2,
@@ -90,7 +91,10 @@ export default function Editor({
     read: (signal: AbortSignal) => Promise<Response>;
     protection: (locked: boolean) => void;
     beginEdit: () => Promise<void>;
-    saveCopy: (blob: Blob) => Promise<Doc>;
+    name: string;
+    text?: string;
+    keep: () => Promise<Doc>;
+    saveCopy: (blob: Blob | { content: string }) => Promise<Doc>;
   };
   backAction: React.RefObject<(() => void) | null>;
   onDirty: (b: boolean) => void;
@@ -116,12 +120,16 @@ export default function Editor({
     original = useRef(''),
     saving = useRef(false),
     action = useRef<(download?: boolean) => void>(() => {});
+  const externalText = external?.text;
   useEffect(() => {
     if (d.type === 'pdf') return;
     let live = true;
     setLoading(true);
     setFailure('');
-    api<{ content: string; updated: number }>(`/documents/${d.id}/content`)
+    (externalText !== undefined
+      ? Promise.resolve({ content: externalText, updated: 0 })
+      : api<{ content: string; updated: number }>(`/documents/${d.id}/content`)
+    )
       .then((r) => {
         if (live) {
           original.current = r.content;
@@ -141,7 +149,7 @@ export default function Editor({
     return () => {
       live = false;
     };
-  }, [d.id, d.type, retry]);
+  }, [d.id, d.type, retry, externalText]);
   const pdfDirty = useCallback((v: boolean) => setDirty(v), []);
   useEffect(() => {
     onDirty(dirty);
@@ -161,7 +169,7 @@ export default function Editor({
     setSaveErr('');
   };
   const persist = (body: Blob | { content: string }) =>
-    external && body instanceof Blob
+    external
       ? external.saveCopy(body)
       : api<Doc>(`/documents/${d.id}/content`, 'PUT', body, {
           'If-Unmodified-Since-Ms': String(version.current),
@@ -255,7 +263,7 @@ export default function Editor({
         <div className="editor-title">
           <FileIcon type={d.type} />
           <span>
-            <strong title={fileName(d)}>{fileName(d)}</strong>
+            <strong title={external?.name || fileName(d)}>{external?.name || fileName(d)}</strong>
             <small>
               {editing ? 'Editing' : d.locked ? 'Protected · Read only' : 'Reading'} <i>/</i>{' '}
               {external
@@ -282,6 +290,30 @@ export default function Editor({
             >
               <Trash2 size={16} />
               <span>Delete</span>
+            </button>
+          )}
+          {!editing && external && (
+            <button
+              className="btn secondary download-btn"
+              aria-label="Save to my library"
+              title="Save to my library"
+              disabled={!ready || busy}
+              onClick={async () => {
+                if (saving.current) return;
+                saving.current = true;
+                setBusy(true);
+                setSaveErr('');
+                try {
+                  onSaved(await external.keep());
+                } catch (e) {
+                  setSaveErr(message(e));
+                } finally {
+                  saving.current = false;
+                  setBusy(false);
+                }
+              }}
+            >
+              <BookPlus size={17} />
             </button>
           )}
           {!external && (

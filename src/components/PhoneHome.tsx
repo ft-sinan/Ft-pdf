@@ -5,6 +5,7 @@ import {
   RefreshCw,
   SlidersHorizontal,
   ImagePlus,
+  ScanLine,
   LayoutGrid,
   ChevronRight,
   ChevronLeft,
@@ -29,23 +30,28 @@ type Page = {
   folders: { id: string; name: string; readable: boolean }[];
   files: Entry[];
   total: number;
+  checked: number;
+  newCount: number;
+  due: boolean;
   notice: string;
 };
 export default function PhoneHome({
   owner,
   open,
   photos,
+  scanner,
   tools,
 }: {
   owner: string;
   open: (d: Doc) => void;
   photos: () => void;
+  scanner: () => void;
   tools: () => void;
 }) {
   const [page, setPage] = useState<Page | null>(null),
     [q, query] = useState(''),
     [offset, offsetTo] = useState(0),
-    [refresh, tick] = useState(0),
+    [onlyNew, filterNew] = useState(false),
     [epoch, scanned] = useState(0),
     [scanning, setScanning] = useState(false),
     [sources, setSources] = useState(false),
@@ -58,44 +64,76 @@ export default function PhoneHome({
       mounted.current = false;
     };
   }, []);
-  const rescan = useCallback(() => {
-    offsetTo(0);
-    tick((n) => n + 1);
-  }, []);
+  const running = useRef(false),
+    pending = useRef(false);
+  const scan = useCallback(
+    async (force: boolean) => {
+      if (running.current) {
+        pending.current ||= force;
+        return;
+      }
+      running.current = true;
+      try {
+        do {
+          pending.current = false;
+          if (mounted.current) {
+            setScanning(true);
+            error('');
+          }
+          await rpc('phone.scan', { force, expectedOwner: owner });
+          force = true;
+        } while (pending.current && mounted.current);
+      } catch (e) {
+        if (mounted.current) error(message(e));
+      } finally {
+        running.current = false;
+        if (mounted.current) {
+          setScanning(false);
+          scanned((n) => n + 1);
+        }
+      }
+    },
+    [owner],
+  );
   useEffect(() => {
-    const recheck = () => {
-      if (!document.hidden) scanned((n) => n + 1);
-    };
-    document.addEventListener('visibilitychange', recheck);
-    window.addEventListener('ft:sources', rescan);
-    return () => {
-      document.removeEventListener('visibilitychange', recheck);
-      window.removeEventListener('ft:sources', rescan);
-    };
-  }, [rescan]);
-  useEffect(() => {
+    // Display the durable catalogue first. A mount by itself never starts a fresh traversal.
     let live = true;
-    setScanning(true);
-    error('');
-    void rpc<Page>('phone.scan')
-      .then(() => {
-        if (live) scanned((n) => n + 1);
-      })
-      .catch((e) => {
-        if (live) error(message(e));
-      })
-      .finally(() => {
-        if (live) setScanning(false);
-      });
+    const check = () => {
+      if (document.hidden) return;
+      void rpc<Page>('phone.page', { check: true, expectedOwner: owner })
+        .then((snapshot) => {
+          if (!live) return;
+          if (snapshot.due) void scan(false);
+          else scanned((n) => n + 1);
+        })
+        .catch((e) => {
+          if (live) error(message(e));
+        });
+    };
+    check();
+    const updated = () => {
+      filterNew(false);
+      offsetTo(0);
+      void scan(true);
+    };
+    window.addEventListener('ft:sources', updated);
+    document.addEventListener('visibilitychange', check);
     return () => {
       live = false;
+      window.removeEventListener('ft:sources', updated);
+      document.removeEventListener('visibilitychange', check);
     };
-  }, [refresh]);
+  }, [owner, scan]);
   useEffect(() => {
     let live = true;
-    void rpc<Page>('phone.page', { q, offset })
+    void rpc<Page>('phone.page', { q, offset, onlyNew, expectedOwner: owner })
       .then((p) => {
-        if (live) setPage(p);
+        if (!live) return;
+        if (onlyNew && !p.newCount) {
+          filterNew(false);
+          offsetTo(0);
+        } else if (offset > 0 && offset >= p.total) offsetTo(0);
+        setPage(p);
       })
       .catch((e) => {
         if (live) error(message(e));
@@ -103,12 +141,18 @@ export default function PhoneHome({
     return () => {
       live = false;
     };
-  }, [q, offset, epoch]);
+  }, [q, offset, onlyNew, epoch, owner]);
   async function act(op: string, id?: string) {
     error('');
     try {
-      await rpc(op, id ? { id } : {});
-      if (op === 'phone.stop' || op === 'phone.forget') rescan();
+      await rpc(op, { expectedOwner: owner, ...(id ? { id } : {}) });
+      if (op === 'phone.stop' || op === 'phone.forget') {
+        filterNew(false);
+        offsetTo(0);
+        scanned((n) => n + 1);
+        const p = await rpc<Page>('phone.page', { check: true, expectedOwner: owner });
+        if (p.due) void scan(false);
+      }
     } catch (e) {
       error(message(e));
     }
@@ -149,6 +193,14 @@ export default function PhoneHome({
   return (
     <div className="phone-home">
       <div className="quick-actions">
+        <button aria-label="Scan document" onClick={scanner}>
+          <ScanLine />
+          <span>
+            <strong>Scan document</strong>
+            <small>Auto-capture paper pages</small>
+          </span>
+          <ChevronRight />
+        </button>
         <button aria-label="Images to PDF" onClick={photos}>
           <ImagePlus />
           <span>
@@ -178,9 +230,9 @@ export default function PhoneHome({
           <div>
             <button
               className="icon-btn"
-              disabled={scanning || !!loading}
+              disabled={!connected || scanning || !!loading}
               aria-label="Refresh phone documents"
-              onClick={rescan}
+              onClick={() => void scan(true)}
             >
               {scanning ? <Spin /> : <RefreshCw size={17} />}
             </button>
@@ -232,6 +284,36 @@ export default function PhoneHome({
         )}
         {connected && (
           <>
+            <div className="phone-checkpoint">
+              <span>
+                {scanning
+                  ? page.checked
+                    ? 'Checking for changes…'
+                    : 'Finding documents…'
+                  : page.checked
+                    ? 'Last checked ' +
+                      new Date(page.checked).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : 'Ready to check'}
+              </span>
+              {page.newCount > 0 && (
+                <button
+                  className="text-btn"
+                  aria-pressed={onlyNew}
+                  onClick={() => {
+                    filterNew(!onlyNew);
+                    offsetTo(0);
+                    query('');
+                  }}
+                >
+                  {onlyNew
+                    ? 'Show all files'
+                    : `${page.newCount} new ${page.newCount === 1 ? 'document' : 'documents'} · View`}
+                </button>
+              )}
+            </div>
             <label className="phone-search">
               <Search size={15} />
               <input
@@ -304,11 +386,6 @@ export default function PhoneHome({
               </footer>
             )}
           </>
-        )}
-        {scanning && (
-          <p className="muted" role="status">
-            Looking for documents…
-          </p>
         )}
         {page?.notice && <p className="muted">{page.notice}</p>}
         <ErrorNote text={err} />

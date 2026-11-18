@@ -57,7 +57,7 @@ final class DeviceLibrary extends SQLiteOpenHelper {
   }
 
   DeviceLibrary(Context c) {
-    super(c.getApplicationContext(), "ft-library-v1.db", null, 3);
+    super(c.getApplicationContext(), "ft-library-v1.db", null, 4);
     app = c.getApplicationContext();
     objects = new File(app.getFilesDir(), "documents");
     staging = new File(app.getCacheDir(), "incoming-documents");
@@ -87,6 +87,7 @@ final class DeviceLibrary extends SQLiteOpenHelper {
     );
     db.execSQL("CREATE INDEX docs_owner ON docs(owner,updated)");
     phoneLinks(db);
+    PhoneFiles.schema(db);
     db.execSQL(
       "CREATE TABLE activity(id INTEGER PRIMARY KEY,owner TEXT NOT NULL,message TEXT NOT NULL,created INTEGER NOT NULL)"
     );
@@ -94,6 +95,7 @@ final class DeviceLibrary extends SQLiteOpenHelper {
 
   @Override
   public void onUpgrade(SQLiteDatabase db, int old, int next) {
+    if (old < 4 && next >= 4) PhoneFiles.schema(db);
     if (old < 2) phoneLinks(db);
     if (old < 3) {
       // Do not reseed or remove anything, even if a file looks like an old example.

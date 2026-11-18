@@ -6,7 +6,7 @@ android {
         applicationId 'studio.ftpdf.app'
         minSdk 26
         targetSdk 35
-        versionCode 6
+        versionCode 7
         versionName(new groovy.json.JsonSlurper().parse(rootProject.file('../package.json')).version)
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }

@@ -31,6 +31,8 @@ public class MainActivity extends Activity {
     TREE = 22,
     ACCESS = 23,
     CAMERA = 24,
+    LIVE_PERMISSION = 25,
+    PHOTO_PERMISSION = 26,
     CREAM = 0xfffbfaf7;
   private static final String[] TYPES = {
     "application/pdf",
@@ -50,8 +52,38 @@ public class MainActivity extends Activity {
   private String pendingExport;
   private java.util.function.BiConsumer<Boolean, String> exportReply;
   private ValueCallback<Uri[]> picker;
+  private java.util.function.Consumer<Boolean> cameraReply;
   private Uri captureUri;
   private File captureFile;
+
+  private boolean cameraAllowed() {
+    return (
+      checkSelfPermission(android.Manifest.permission.CAMERA) ==
+      android.content.pm.PackageManager.PERMISSION_GRANTED
+    );
+  }
+
+  private boolean localCameraPage() {
+    return (
+      web != null &&
+      !isFinishing() &&
+      !isDestroyed() &&
+      web.getUrl() != null &&
+      (ORIGIN + "/index.html").equals(web.getUrl().split("#", 2)[0])
+    );
+  }
+
+  private void startPhoto() {
+    try {
+      takePhoto();
+    } catch (Exception e) {
+      if (captureFile != null) captureFile.delete();
+      captureUri = null;
+      if (picker != null) picker.onReceiveValue(null);
+      picker = null;
+      toast("No camera app available. Choose existing images instead.");
+    }
+  }
 
   private void takePhoto() throws Exception {
     File dir = new File(getCacheDir(), "photo-captures");
@@ -75,7 +107,7 @@ public class MainActivity extends Activity {
     return false;
   }
 
-  private boolean pdfView(Intent i) {
+  private boolean fileView(Intent i) {
     if (
       i == null ||
       !Intent.ACTION_VIEW.equals(i.getAction()) ||
@@ -84,22 +116,16 @@ public class MainActivity extends Activity {
     ) return false;
     Uri uri = i.getData();
     if ((getPackageName() + ".capture").equals(uri.getAuthority())) return false;
-    try {
-      return (
-        "application/pdf".equalsIgnoreCase(i.resolveType(this)) ||
-        (uri.getLastPathSegment() != null &&
-          uri.getLastPathSegment().toLowerCase(Locale.ROOT).endsWith(".pdf"))
-      );
-    } catch (RuntimeException unavailable) {
-      return false;
-    }
+    // Intent filters select our formats. For explicit defaults, inspect DISPLAY_NAME in
+    // the reader too: generic MIME providers often expose only a numeric URI here.
+    return true;
   }
 
-  private void forwardPdf(Intent i) {
+  private void forwardFile(Intent i) {
     // Older defaults may explicitly address MainActivity. Forward only the read grant.
     Intent reader = new Intent(Intent.ACTION_VIEW)
       .setClass(this, OpenPdfActivity.class)
-      .setDataAndType(i.getData(), "application/pdf");
+      .setDataAndType(i.getData(), i.getType());
     try {
       startActivity(reader.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
     } catch (SecurityException expired) {
@@ -110,8 +136,8 @@ public class MainActivity extends Activity {
   @Override
   public void onCreate(Bundle state) {
     super.onCreate(state);
-    if (!externalReader() && pdfView(getIntent())) {
-      forwardPdf(getIntent());
+    if (!externalReader() && fileView(getIntent())) {
+      forwardFile(getIntent());
       finish();
       return;
     }
@@ -131,8 +157,8 @@ public class MainActivity extends Activity {
     );
     library = DeviceLibrary.instance(this);
     phone = new PhoneFiles(this, library);
-    if (externalReader() && !pdfView(getIntent())) {
-      showError("This PDF is unavailable. Go back and open it again from Files.");
+    if (externalReader() && !fileView(getIntent())) {
+      showError("This file is unavailable. Go back and open it again from Files.");
       return;
     }
     if (state == null) queue(getIntent());
@@ -153,6 +179,7 @@ public class MainActivity extends Activity {
     WebSettings settings = web.getSettings();
     settings.setJavaScriptEnabled(true);
     settings.setDomStorageEnabled(true);
+    settings.setMediaPlaybackRequiresUserGesture(false); // Muted, local live camera preview.
     settings.setBuiltInZoomControls(true); // Pinch to read without a toolbar.
     settings.setDisplayZoomControls(false);
     settings.setAllowFileAccess(false);
@@ -214,6 +241,23 @@ public class MainActivity extends Activity {
     web.setWebChromeClient(
       new WebChromeClient() {
         @Override
+        public void onPermissionRequest(PermissionRequest request) {
+          // Sandboxed document frames never inherit this local origin. Do not grant audio or future resource types.
+          if (
+            !localCameraPage() ||
+            !trusted(request.getOrigin()) ||
+            !cameraAllowed() ||
+            !Arrays.equals(request.getResources(), new String[] {
+              PermissionRequest.RESOURCE_VIDEO_CAPTURE,
+            })
+          ) {
+            request.deny();
+            return;
+          }
+          request.grant(new String[] { PermissionRequest.RESOURCE_VIDEO_CAPTURE });
+        }
+
+        @Override
         public boolean onShowFileChooser(WebView w, ValueCallback<Uri[]> cb, FileChooserParams p) {
           if (
             w.getUrl() == null || !ORIGIN.concat("/index.html").equals(w.getUrl().split("#", 2)[0])
@@ -221,15 +265,11 @@ public class MainActivity extends Activity {
           if (picker != null) picker.onReceiveValue(null);
           picker = cb;
           if (p.isCaptureEnabled() && Arrays.toString(p.getAcceptTypes()).contains("image/")) {
-            try {
-              takePhoto();
-            } catch (Exception e) {
-              if (captureFile != null) captureFile.delete();
-              captureUri = null;
-              picker = null;
-              cb.onReceiveValue(null);
-              toast("No camera app available. Choose existing images instead.");
-            }
+            if (cameraAllowed()) startPhoto();
+            else requestPermissions(
+              new String[] { android.Manifest.permission.CAMERA },
+              PHOTO_PERMISSION
+            );
             return true;
           }
           List<String> types = new ArrayList<>();
@@ -286,14 +326,45 @@ public class MainActivity extends Activity {
             JSONObject a = request.optJSONObject("args");
             if (a == null) a = new JSONObject();
             Object value;
-            if (op.startsWith("phone.")) {
+            if (op.equals("camera.access")) {
+              String token = request.getString("id");
+              runOnUiThread(() -> {
+                if (isDestroyed() || web != w) return;
+                java.util.function.Consumer<Boolean> answer = ok -> {
+                  try {
+                    if (web == w && !isDestroyed()) reply.postMessage(
+                      new JSONObject().put("id", token).put("ok", true).put("value", ok).toString()
+                    );
+                  } catch (Exception ignored) {}
+                };
+                if (!localCameraPage() || cameraReply != null) answer.accept(false);
+                else if (cameraAllowed()) answer.accept(true);
+                else {
+                  cameraReply = answer;
+                  requestPermissions(
+                    new String[] { android.Manifest.permission.CAMERA },
+                    LIVE_PERMISSION
+                  );
+                }
+              });
+              return;
+            } else if (op.startsWith("phone.")) {
               String owner = library.currentOwner();
+              if (
+                a.has("expectedOwner") && !owner.equals(a.getString("expectedOwner"))
+              ) throw new IOException("The active workspace changed.");
               switch (op) {
                 case "phone.scan":
-                  value = phone.scan(owner);
+                  value = phone.scan(owner, a.optBoolean("force", true));
                   break;
                 case "phone.page":
-                  value = phone.page(owner, a.optString("q"), Math.max(0, a.optInt("offset")));
+                  value = phone.page(
+                    owner,
+                    a.optString("q"),
+                    Math.max(0, a.optInt("offset")),
+                    a.optBoolean("onlyNew"),
+                    a.optBoolean("check")
+                  );
                   break;
                 case "phone.stop":
                   phone.enable(owner, false);
@@ -397,7 +468,7 @@ public class MainActivity extends Activity {
         });
       }
     );
-    web.loadUrl(ORIGIN + "/index.html" + (externalReader() ? "#/open-pdf" : ""));
+    web.loadUrl(ORIGIN + "/index.html" + (externalReader() ? "#/open-file" : ""));
   }
 
   private Set<String> creatorLinks() {
@@ -535,7 +606,7 @@ public class MainActivity extends Activity {
       );
       if (path.equals("/index.html")) h.put(
         "Content-Security-Policy",
-        "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' blob:; worker-src 'self' blob:; frame-src 'self' blob: about:; object-src 'none'; base-uri 'none'; form-action 'none'"
+        "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self' blob:; worker-src 'self' blob:; frame-src 'self' blob: about:; object-src 'none'; base-uri 'none'; form-action 'none'"
       );
       String type = mime(path);
       return new WebResourceResponse(
@@ -579,7 +650,11 @@ public class MainActivity extends Activity {
 
   private void add(Uri u) {
     if (
-      u != null && "content".equals(u.getScheme()) && inbox.size() < 30 && !inbox.containsValue(u)
+      u != null &&
+      "content".equals(u.getScheme()) &&
+      !(getPackageName() + ".capture").equals(u.getAuthority()) &&
+      inbox.size() < 30 &&
+      !inbox.containsValue(u)
     ) inbox.put(UUID.randomUUID().toString(), u);
   }
 
@@ -622,7 +697,15 @@ public class MainActivity extends Activity {
         try {
           type = getContentResolver().getType(item.getValue());
         } catch (RuntimeException ignored) {}
-        if (!name.contains(".") && type != null) {
+        if (externalReader() && !PhoneFiles.supported(name)) {
+          String hint = getIntent().getType();
+          if (hint != null && Arrays.asList(TYPES).contains(hint)) type = hint;
+          String path = item.getValue().getLastPathSegment();
+          if (path != null && PhoneFiles.supported(path)) name += path.substring(
+            path.lastIndexOf('.')
+          );
+        }
+        if (!PhoneFiles.supported(name) && type != null) {
           int ix = Arrays.asList(TYPES).indexOf(type);
           if (ix >= 0) name += new String[] { ".pdf", ".doc", ".docx", ".txt", ".html" }[ix];
         }
@@ -727,6 +810,19 @@ public class MainActivity extends Activity {
   @Override
   public void onRequestPermissionsResult(int code, String[] perms, int[] grants) {
     super.onRequestPermissionsResult(code, perms, grants);
+    if (code == LIVE_PERMISSION && cameraReply != null) {
+      java.util.function.Consumer<Boolean> answer = cameraReply;
+      cameraReply = null;
+      answer.accept(cameraAllowed() && localCameraPage());
+    }
+    if (code == PHOTO_PERMISSION && picker != null) {
+      if (cameraAllowed() && localCameraPage()) startPhoto();
+      else {
+        picker.onReceiveValue(null);
+        picker = null;
+        toast("Camera access is off. You can still choose images.");
+      }
+    }
     if (code == ACCESS) finishSource(code, null);
   }
 
@@ -830,8 +926,8 @@ public class MainActivity extends Activity {
     super.onNewIntent(i);
     // The inbox owns pending grants. Do not replace the activity’s launch intent
     // with an already-consumed file when a second document is opened.
-    if (pdfView(i)) {
-      forwardPdf(i);
+    if (fileView(i)) {
+      forwardFile(i);
       return;
     }
     if (externalReader()) return;
@@ -865,11 +961,21 @@ public class MainActivity extends Activity {
   }
 
   @Override
+  protected void onStop() {
+    if (web != null) web.evaluateJavascript(
+      "window.dispatchEvent(new Event('ft:camera-stop'))",
+      null
+    );
+    super.onStop();
+  }
+
+  @Override
   protected void onDestroy() {
     if (picker != null) picker.onReceiveValue(null);
     if (
       isFinishing() && pendingExport != null && pendingExport.startsWith("temp:")
     ) library.finishExport(pendingExport.substring(5));
+    cameraReply = null;
     scans.shutdownNow();
     io.shutdown();
     if (web != null) {

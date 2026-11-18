@@ -266,7 +266,7 @@ export function createApi(dbPath = process.env.FT_DB || 'data/ft-pdf.sqlite') {
   });
   api.post('/documents/import', upload, async (req, res) => {
     if (req.get('X-Ft-Owner') && req.get('X-Ft-Owner') !== req.user)
-      throw fail(409, 'The active workspace changed. Reopen the PDF before saving a copy.');
+      throw fail(409, 'The active workspace changed. Reopen the document before saving a copy.');
     if (!req.file) throw fail(400, 'Choose a file to import.');
     const c = col(req.user, req.body.collectionId);
     const f = await importFile(req.body.name || req.file.originalname, req.file.buffer);

@@ -6,12 +6,10 @@ import {
   Copy,
   Feather,
   Globe,
-  Layers,
   Mail,
   MessageCircle,
   Send,
   ShieldCheck,
-  Sparkles,
 } from 'lucide-react';
 import { version } from '../../package.json';
 import contacts from '../../shared/creator-contacts.json';
@@ -105,7 +103,10 @@ function Contact({
         }}
       >
         <Icon size={17} />
-        <span>{item.label === 'Website' ? 'sinanmk.my.id' : item.label}</span>
+        <span>
+          <strong>{item.label === 'Email' ? 'Send feedback' : item.label}</strong>
+          <small>{item.contact.replace(/^https?:\/\//, '').replace(/\/$/, '')}</small>
+        </span>
         <ArrowUpRight size={13} />
       </a>
       <button
@@ -118,7 +119,7 @@ function Contact({
     </div>
   );
 }
-/** The signature card from My Vault, reinterpreted as a printer's seal. No remote assets. */
+/** A local Settings panel; contact URLs are the same allowlist used by Android. */
 export default function CreatorSpace() {
   const [flipped, flip] = useState(false),
     [badge, select] = useState<number | null>(null),
@@ -135,46 +136,23 @@ export default function CreatorSpace() {
   return (
     <section className="creator-space" aria-label="Creator Space">
       <div className="maker-card">
-        <div className="maker-edition" aria-hidden="true">
-          <span>
-            <Sparkles size={12} /> Creator Space
-          </span>
-          <span>FT / {version}</span>
+        <button
+          className="maker-coin"
+          aria-label="Flip creator emblem"
+          aria-pressed={flipped}
+          onClick={() => flip((v) => !v)}
+        >
+          {flipped ? <BookOpen size={22} /> : <span>S</span>}
+        </button>
+        <div>
+          <p className="maker-kicker">Creator Space</p>
+          <h3>{flipped ? 'Read first.' : 'Made by Sinan'}</h3>
+          <p className="maker-handle">{flipped ? 'Edit when you’re ready.' : '@ft-sinan'}</p>
         </div>
-        <div className="maker-stage">
-          <div className="maker-orbit" aria-hidden="true">
-            <i>
-              <Feather size={14} />
-            </i>
-            <i>
-              <Code2 size={14} />
-            </i>
-            <i>
-              <Layers size={14} />
-            </i>
-          </div>
-          <button
-            className="maker-coin"
-            aria-label="Flip creator emblem"
-            aria-pressed={flipped}
-            onClick={() => flip((v) => !v)}
-          >
-            <span className="coin-rotor" aria-hidden="true">
-              <span className="coin-front">
-                S<span>FT STUDIO</span>
-              </span>
-              <span className="coin-back">
-                <BookOpen size={35} />
-                <span>READ FIRST</span>
-              </span>
-            </span>
-          </button>
-        </div>
-        <p className="maker-kicker">{flipped ? 'A NOTE FROM THE STUDIO' : 'DESIGNED & BUILT BY'}</p>
-        <h3>{flipped ? 'Read first.' : 'Sinan'}</h3>
-        <p className="maker-handle">{flipped ? 'Edit when you’re ready.' : '@ft-sinan'}</p>
-        <p className="maker-hint">Tap the seal to flip it</p>
       </div>
+      <p className="maker-note">
+        Ft PDF is a place to read your documents and edit a copy when you need one.
+      </p>
       <div className="maker-badges" aria-label="About the studio">
         {badges.map(({ name, icon: I }, i) => (
           <button
@@ -192,6 +170,27 @@ export default function CreatorSpace() {
           {badges[badge].detail}
         </p>
       )}
+      <div className="connect-head">
+        <h4>Connect with Sinan</h4>
+        <p>
+          {onDevice ? 'Links open in another app.' : 'Links open outside the workspace.'} Tap to
+          open or hold to copy.
+        </p>
+      </div>
+      <div className="maker-contacts">
+        {[...contacts]
+          .sort(
+            (a, b) =>
+              ['Website', 'Email', 'GitHub', 'Telegram', 'WhatsApp'].indexOf(a.label) -
+              ['Website', 'Email', 'GitHub', 'Telegram', 'WhatsApp'].indexOf(b.label),
+          )
+          .map((item) => (
+            <Contact key={item.label} item={item} copy={(item) => void copy(item)} />
+          ))}
+      </div>
+      <p className="copy-feedback" role="status">
+        {feedback}
+      </p>
       <dl className="maker-stats">
         {[
           ['Version', version],
@@ -204,21 +203,6 @@ export default function CreatorSpace() {
           </div>
         ))}
       </dl>
-      <div className="connect-head">
-        <h4>Connect with Sinan</h4>
-        <p>
-          {onDevice ? 'Links open in another app.' : 'Links open outside the workspace.'} Tap to
-          open or hold to copy.
-        </p>
-      </div>
-      <div className="maker-contacts">
-        {contacts.map((item) => (
-          <Contact key={item.label} item={item} copy={(item) => void copy(item)} />
-        ))}
-      </div>
-      <p className="copy-feedback" role="status">
-        {feedback}
-      </p>
     </section>
   );
 }

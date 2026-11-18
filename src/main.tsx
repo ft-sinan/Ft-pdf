@@ -4,19 +4,19 @@ import { createRoot } from 'react-dom/client';
 import { onDevice } from './types';
 import './styles.css';
 const App = lazy(() => import('./App'));
-const OpenPdf = lazy(() => import('./components/OpenPdf'));
+const OpenFile = lazy(() => import('./components/OpenFile'));
 const external = onDevice
-  ? location.hash === '#/open-pdf'
-  : new URLSearchParams(location.search).has('open-pdf');
+  ? ['#/open-file', '#/open-pdf'].includes(location.hash)
+  : ['open-file', 'open-pdf'].some((k) => new URLSearchParams(location.search).has(k));
 createRoot(document.getElementById('root')!).render(
   <Suspense
     fallback={
       <div role="status" className="boot-work">
-        {external ? 'Opening PDF…' : 'Opening workspace…'}
+        {external ? 'Opening document…' : 'Opening workspace…'}
       </div>
     }
   >
-    {external ? <OpenPdf /> : <App />}
+    {external ? <OpenFile /> : <App />}
   </Suspense>,
 );
 if (!onDevice && window.isSecureContext && 'serviceWorker' in navigator)
