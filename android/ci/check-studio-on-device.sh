@@ -7,6 +7,18 @@ adb install -r -t "$APK_DIR/ft-pdf-debug.apk"
 adb install -r -t "$APK_DIR/test.apk"
 adb shell input keyevent KEYCODE_WAKEUP
 adb shell wm dismiss-keyguard
+# Do not hide ANRs or auto-click system dialogs. Pixel Launcher on the Google APIs
+# image can itself ANR offline and cover DocumentsUI. Use a test-only, inert HOME
+# between cases on the disposable Actions emulator; keep the real pickers/permissions.
+if [[ "${GITHUB_ACTIONS:-false}" == true ]]; then
+  home="$pkg.test/.IdleHome"
+  adb shell cmd package set-home-activity --user 0 "$home"
+  if ! adb shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | grep -Fq "$pkg.test/"; then
+    echo '::error::Test-only home was not selected on the CI emulator'; exit 1
+  fi
+  adb shell am force-stop com.google.android.apps.nexuslauncher
+  adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME
+fi
 adb shell cmd connectivity airplane-mode enable
 adb shell svc wifi disable
 adb shell svc data disable
