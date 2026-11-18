@@ -46,6 +46,19 @@ public class PhoneToolsTest {
     UiObject2 o = os.wait(Until.findObject(By.textContains(stem)), 6500);
     if (o == null) o = os.wait(Until.findObject(By.descContains(stem)), 2000);
     if (o == null) throw new AssertionError("Image missing: " + name + nativeScreen());
+    // Photo grids may expose only a "Preview the file ..." child. Select the
+    // enclosing item, not its magnifying-glass affordance.
+    for (
+      UiObject2 child = o, parent = o.getParent();
+      parent != null;
+      child = parent, parent = parent.getParent()
+    ) {
+      String cls = parent.getClassName(),
+        id = parent.getResourceName();
+      if (
+        (cls != null && cls.contains("RecyclerView")) || (id != null && id.endsWith("/dir_list"))
+      ) return child;
+    }
     return o;
   }
 
@@ -153,15 +166,46 @@ public class PhoneToolsTest {
     return u;
   }
 
-  private void pickImage(StudioScreen ui, String name, int count) throws Exception {
-    ui.touch(".dropzone");
-    imageInFiles(name).click();
-    UiObject2 open = os.wait(Until.findObject(By.text(Pattern.compile("(?i)^open$"))), 900);
-    if (open != null) open.click();
-    ui.await(
-      "selected image " + name,
-      "document.querySelectorAll('.photo-list li').length===" + count
+  private boolean pickPair(StudioScreen ui, String red, String blue) throws Exception {
+    ui.js(
+      "(()=>{window.__photoNames=[];document.addEventListener('change',e=>{if(e.target.type==='file')window.__photoNames=Array.from(e.target.files,f=>[f.name,f.size]);},true);return true})()"
     );
+    ui.touch(".dropzone");
+    UiObject2 list = os.wait(Until.findObject(By.desc("List view")), 1000);
+    if (list != null) list.click();
+    imageInFiles(red).longClick();
+    imageInFiles(blue).click();
+    // ACTION_OPEN_DOCUMENT in multi-selection mode uses action_menu_select
+    // ("Select", not necessarily "Open"). A tap on a preview is not a pick.
+    UiObject2 confirm = os.wait(
+      Until.findObject(By.res(Pattern.compile(".*:id/action_menu_select"))),
+      4000
+    );
+    if (confirm == null) confirm = os.wait(
+      Until.findObject(By.text(Pattern.compile("(?i)^(select|open|add)( .*)?$"))),
+      3000
+    );
+    if (confirm == null) throw new AssertionError("Confirm both images in Files:" + nativeScreen());
+    confirm.click();
+    try {
+      ui.await(
+        "both selected images loaded",
+        "document.querySelectorAll('.photo-list li').length===2"
+      );
+    } catch (AssertionError ignored) {
+      throw new AssertionError(
+        "Image chooser result=" +
+          ui.js("JSON.stringify(window.__photoNames)") +
+          " state=" +
+          ui.js("q('.modal')?.innerText.slice(-900)") +
+          nativeScreen()
+      );
+    }
+    String first = new JSONTokener(ui.js("q('.photo-list li strong')?.textContent"))
+      .nextValue()
+      .toString();
+    assertTrue("One of the two selected images", red.equals(first) || blue.equals(first));
+    return red.equals(first);
   }
 
   @Test
@@ -174,8 +218,7 @@ public class PhoneToolsTest {
     try (StudioScreen ui = new StudioScreen()) {
       ui.button("New document");
       ui.button("Create from images");
-      pickImage(ui, red, 1);
-      pickImage(ui, blue, 2);
+      boolean redInitiallyFirst = pickPair(ui, red, blue);
       ui.button("Move image 2 up");
       ui.button("Rotate image 2");
       ui.fill("input[placeholder='Photo document']", "Two photo pages");
@@ -209,7 +252,7 @@ public class PhoneToolsTest {
             int pixel = rendered.getPixel(p.getWidth() / 2, p.getHeight() / 2);
             assertTrue(
               "Photo color in requested order",
-              i == 0
+              (i == 0) == redInitiallyFirst
                 ? Color.blue(pixel) > 230 && Color.red(pixel) < 30
                 : Color.red(pixel) > 230 && Color.blue(pixel) < 30
             );

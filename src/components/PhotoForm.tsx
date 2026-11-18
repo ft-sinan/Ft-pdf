@@ -56,7 +56,7 @@ export default function PhotoForm({
     <Modal
       title="Images to PDF"
       kicker="CREATE ON DEVICE"
-      subtitle="Choose your photos. Each image becomes one page, in the order below."
+      subtitle="In Files, touch and hold to select multiple photos, then confirm. Arrange them here, one photo per page."
       onClose={() => !work && close()}
     >
       <form
