@@ -52,4 +52,5 @@ adb shell appops set --uid "$pkg" MANAGE_EXTERNAL_STORAGE deny
 (run_case "$pkg.PhoneToolsTest#orderAndRotatePhotosFromAndroidFiles" 1 image-pdf) || failures=1
 (run_case "$pkg.PhoneToolsTest#mergeAndExportSplitZipViaFiles" 1 toolbox-export) || failures=1
 (run_case "$pkg.PhoneToolsTest#offlineOcrProducesSearchablePages" 1 offline-ocr) || failures=1
+(run_case "$pkg.PhoneToolsTest#passwordProtectedCopyRoundTrip" 1 password-roundtrip) || failures=1
 exit "$failures"

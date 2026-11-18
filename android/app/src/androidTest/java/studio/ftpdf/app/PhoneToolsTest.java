@@ -273,6 +273,30 @@ public class PhoneToolsTest {
   }
 
   @Test
+  public void passwordProtectedCopyRoundTrip() throws Exception {
+    try (StudioScreen ui = new StudioScreen()) {
+      String pw = "[role='dialog'] input[type='password']";
+      job(ui, "Protect PDF");
+      choose(ui, "Quarterly report.pdf", 1);
+      ui.fill(pw, "local-example-pass");
+      ui.fill("input[placeholder='Name your new copy']", "Protected report");
+      ui.button("Run tool");
+      ui.await("password required to view protected PDF", "!!btn('Unlock document')");
+      ui.fill(pw, "local-example-pass");
+      ui.button("Unlock document");
+      ui.visible("canvas[aria-label='PDF page 1 of 3']");
+      ui.closeEditor();
+      job(ui, "Unlock PDF");
+      choose(ui, "Protected report.pdf", 1);
+      ui.fill(pw, "local-example-pass");
+      ui.fill("input[placeholder='Name your new copy']", "Readable report");
+      ui.button("Run tool");
+      ui.visible("canvas[aria-label='PDF page 1 of 3']");
+      ui.await("unlocked output can be edited", "!!btn('Text')");
+    }
+  }
+
+  @Test
   public void offlineOcrProducesSearchablePages() throws Exception {
     DeviceLibrary db = DeviceLibrary.instance(app);
     db.call("workspace", new JSONObject());

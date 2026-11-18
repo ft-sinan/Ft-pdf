@@ -38,6 +38,8 @@ jobs:
           fi
       - name: Check signature and record checksum
         run: |
+          set -euo pipefail
+          trap 'echo "::error title=APK packaging::Failed at line $LINENO: $BASH_COMMAND"; if [ -f entries.txt ]; then grep -E "^assets/(studio/(ocr/|index.html|assets/(pdf.worker|codec.worker))|seed/manifest)" entries.txt || true; fi' ERR
           mkdir -p "$RUNNER_TEMP/ft-apk"
           cp android/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/ft-apk/ft-pdf-debug.apk"
           cd "$RUNNER_TEMP/ft-apk"
@@ -45,12 +47,16 @@ jobs:
           unzip -Z1 ft-pdf-debug.apk > entries.txt
           grep -q '^assets/studio/index.html$' entries.txt
           grep -q '^assets/seed/manifest.json$' entries.txt
-          grep -q '^assets/studio/ocr/eng.traineddata.gz$' entries.txt
+          # Use a neutral asset suffix: mergeAssets treats .gz files specially.
+          grep -qx 'assets/studio/ocr/english-model.bin' entries.txt
+          for file in worker.js english-model.bin; do
+            unzip -p ft-pdf-debug.apk "assets/studio/ocr/$file" | cmp - "$GITHUB_WORKSPACE/android/app/build/generated/ftAssets/studio/ocr/$file"
+          done
           grep -q '^assets/studio/assets/pdf.worker' entries.txt
           grep -q '^assets/studio/assets/codec.worker' entries.txt
           rm entries.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions ft-pdf-debug.apk > permissions.txt
-          if grep -q android.permission.INTERNET permissions.txt; then exit 1; fi
+          if grep -q android.permission.INTERNET permissions.txt; then echo "::error::Unexpected INTERNET permission in installed manifest"; exit 1; fi
           rm permissions.txt
           sha256sum ft-pdf-debug.apk | tee SHA256SUMS.txt
       - uses: actions/upload-artifact@v4

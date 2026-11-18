@@ -22,7 +22,7 @@ for (const [from, to] of [
   ['tesseract.js/LICENSE.md', 'tesseract.LICENSE'],
   ['tesseract.js/dist/worker.min.js.LICENSE.txt', 'worker.LICENSE.txt'],
   ['tesseract.js-core/LICENSE', 'core.LICENSE'],
-  ['@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz', 'eng.traineddata.gz'],
+  ['@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz', 'english-model.bin'],
 ])
   await cp(join('node_modules', from), join(studio, 'ocr', to));
 // Classic worker: define TesseractCore before the worker attaches its message listener.

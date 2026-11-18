@@ -1,4 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <!-- Keep offline even if a library changes its manifest. -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove"/>
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
     <application android:requestLegacyExternalStorage="true" android:label="Ft PDF" android:icon="@drawable/ft_mark" android:theme="@style/AppTheme" android:allowBackup="false" android:enableOnBackInvokedCallback="true" android:usesCleartextTraffic="false">

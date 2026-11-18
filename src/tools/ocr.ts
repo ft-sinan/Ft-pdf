@@ -52,7 +52,7 @@ export class OfflineOCR {
     // The worker includes the WASM glue and binary. Supply the model as bytes so
     // the worker never has to fetch from a document provider or a CDN.
     await this.step('load', { options: { lstmOnly: true, corePath: '/ocr/worker.js' } });
-    const r = await fetch('/ocr/eng.traineddata.gz', { signal: this.signal });
+    const r = await fetch('/ocr/english-model.bin', { signal: this.signal });
     if (!r.ok) throw Error('The bundled English language model is unavailable.');
     const bytes = await r.arrayBuffer();
     await this.step(
