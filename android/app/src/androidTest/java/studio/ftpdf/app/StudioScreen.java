@@ -64,6 +64,8 @@ final class StudioScreen implements AutoCloseable {
       label +
         " — route: " +
         js("location.hash") +
+        " — visibility: " +
+        js("document.visibilityState + '/' + document.hasFocus()") +
         " — screen: " +
         js("document.body?.innerText.slice(-1800)")
     );

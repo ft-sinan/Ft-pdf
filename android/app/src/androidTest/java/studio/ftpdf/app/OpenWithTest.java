@@ -110,6 +110,20 @@ public class OpenWithTest {
         reader.reader();
         reader.button("Close PDF");
       }
+      // Back from a document returns to its caller (often Files), not necessarily
+      // the studio task. ActivityScenario.onActivity also works on a stopped activity;
+      // an offscreen WebView can answer DOM queries but won't paint PDF.js frames.
+      // Re-select the app icon, without starting a new scenario or clearing its task.
+      String launch = os.executeShellCommand(
+        "am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n " +
+          app.getPackageName() +
+          "/.MainActivity"
+      );
+      assertFalse(launch, launch.contains("Error:"));
+      ui.await(
+        "original workspace visible after icon launch",
+        "document.visibilityState==='visible' && !!q('.editor-shell.editing')"
+      );
       ui.value("textarea.text-page", "Unsaved draft behind the reader");
       ui.save();
       ui.closeDocument();

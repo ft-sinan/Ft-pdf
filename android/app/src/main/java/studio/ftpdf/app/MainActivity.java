@@ -809,8 +809,16 @@ public class MainActivity extends Activity {
   }
 
   @Override
+  protected void onPause() {
+    // Pause this renderer, never global WebView timers: another Ft PDF activity may be reading.
+    if (web != null) web.onPause();
+    super.onPause();
+  }
+
+  @Override
   protected void onResume() {
     super.onResume();
+    if (web != null) web.onResume();
     if (web != null && !externalReader()) web.evaluateJavascript(
       "window.dispatchEvent(new Event('ft:resume'))",
       null
