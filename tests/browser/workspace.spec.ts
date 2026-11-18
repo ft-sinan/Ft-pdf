@@ -192,6 +192,8 @@ test('phone navigation, collection creation, registration and sign in', async ({
   await page.getByLabel('Your name').fill('Taylor Lane');
   await page.getByLabel('Email address').fill(email);
   await page.getByLabel('Password', { exact: true }).fill('paper-studio-2026');
+  await expect(page.getByLabel('Your name')).toHaveValue('Taylor Lane');
+  await expect(page.getByLabel('Password', { exact: true })).toHaveValue('paper-studio-2026');
   await page
     .getByRole('dialog')
     .getByRole('button', { name: 'Create account', exact: true })

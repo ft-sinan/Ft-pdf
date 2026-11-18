@@ -22,18 +22,18 @@ export function Modal({
     ref = useRef<HTMLDivElement>(null),
     close = useRef(onClose);
   close.current = onClose;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const prior = document.activeElement as HTMLElement | null,
       overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const el = ref.current!;
-    const t = window.setTimeout(() => {
-      (
-        (el.querySelector(
-          '[data-autofocus], input:not([type=hidden]):not([type=file]), textarea, select',
-        ) as HTMLElement | null) || el
-      ).focus();
-    }, 30);
+    // Focus once on mount, before the user can choose a different field. A delayed
+    // focus can redirect fast password-manager or keyboard input into the name field.
+    (
+      el.querySelector<HTMLElement>(
+        '[data-autofocus], input:not([type=hidden]):not([type=file]), textarea, select',
+      ) || el
+    ).focus({ preventScroll: true });
     function key(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -61,7 +61,6 @@ export function Modal({
     }
     document.addEventListener('keydown', key, true);
     return () => {
-      clearTimeout(t);
       document.body.style.overflow = overflow;
       document.removeEventListener('keydown', key, true);
       prior?.focus();
