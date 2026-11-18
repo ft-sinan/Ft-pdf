@@ -81,7 +81,8 @@ export function officeText(bytes: Uint8Array, kind: 'fromslides' | 'fromexcel') 
       )
     : [];
   const parts: string[] = [];
-  let chars = 0;
+  let chars = 0,
+    hasText = false;
   for (const [i, item] of tags(xml(root), sheets ? 'sheet' : 'sldId').entries()) {
     const path = links.get(
       item.getAttributeNS(
@@ -118,6 +119,7 @@ export function officeText(bytes: Uint8Array, kind: 'fromslides' | 'fromexcel') 
             .map((e) => e.textContent)
             .join(''),
         );
+    if (lines.some((line) => line.replace(/[|\s]/g, '').length)) hasText = true;
     const text =
       (sheets ? item.getAttribute('name') || `Sheet ${i + 1}` : `Slide ${i + 1}`) +
       '\n' +
@@ -126,7 +128,10 @@ export function officeText(bytes: Uint8Array, kind: 'fromslides' | 'fromexcel') 
       throw Error('Use a document with up to 50,000 text characters.');
     parts.push(text);
   }
-  if (!parts.length) throw Error('No readable slides or sheets.');
+  if (!parts.length || !hasText)
+    throw Error(
+      'No readable slide text or worksheet values. Image-only pages cannot be converted as text.',
+    );
   return parts.join('\n\n');
 }
 export function plainHTML(html: string) {

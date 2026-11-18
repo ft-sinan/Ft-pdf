@@ -60,7 +60,7 @@ const server = createServer(async (req, res) => {
     if (path.startsWith('/ocr/') && path.endsWith('.js'))
       res.setHeader(
         'Content-Security-Policy',
-        "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'none'",
+        "default-src 'none'; script-src 'wasm-unsafe-eval'; connect-src data:; worker-src 'none'",
       );
     res.end(data);
   } catch {
@@ -81,9 +81,15 @@ try {
       : r.abort(),
   );
   page.on('console', (m) => {
-    if (m.type() === 'error') logs.push(m.text());
+    if (m.type() === 'error') {
+      logs.push(m.text().slice(0, 260));
+      console.warn('Chromium:', m.text().slice(0, 260));
+    }
   });
-  page.on('pageerror', (e) => logs.push(e.message));
+  page.on('pageerror', (e) => {
+    logs.push(e.message);
+    console.warn('Chromium:', e.message);
+  });
   await page.goto(base + '/test');
   const runner = (await readdir(join(studio, 'assets'))).find((n) => /^run-.*\.js$/.test(n));
   assert.ok(runner);
@@ -126,6 +132,7 @@ try {
     };
   }, runner);
   const run = async (op, inputs = ['source.pdf'], opts = {}, output = op + '.pdf') => {
+    console.log('Checking', op);
     const v = await page.evaluate(
       ([op, inputs, out, opts]) => window.tool(op, inputs, out, opts),
       [op, inputs, output, opts],
@@ -170,6 +177,21 @@ try {
     2,
   );
   await assert.rejects(() => run('toword', ['redact.pdf']), /No selectable text/);
+  await run('tojpg', ['redact.pdf'], { range: '1' }, 'erased.jpg');
+  const rgb = await page.evaluate(async () => {
+    const img = await createImageBitmap(window.fixtures['erased.jpg']);
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    img.close();
+    return Array.from(ctx.getImageData(c.width / 2, c.height / 2, 1, 1).data);
+  });
+  assert.ok(
+    rgb.slice(0, 3).every((x) => x < 5),
+    'marked region is black in the exported PDF rendering',
+  );
   assert.equal((await p('ocr', ['flatten.pdf'], { range: '1' })).getPageCount(), 1);
   const recognized = await run('toword', ['ocr.pdf']);
   assert.match((await mammoth.extractRawText({ buffer: recognized })).value, /FIELD NOTES/i);

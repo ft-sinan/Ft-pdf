@@ -1,6 +1,7 @@
 import { PDFDocument, PDFPage, StandardFonts, degrees, rgb } from 'pdf-lib';
 import { zipSync } from 'fflate';
 import { canvasBlob, MB } from './photos';
+import { OfflineOCR } from './ocr';
 import { pageRange, type Box } from './pages';
 import type { Tool } from './catalog';
 import { openPdf, render, textRows } from './pdfview';
@@ -250,7 +251,7 @@ async function raster(
   const out = await PDFDocument.create(),
     zip: Record<string, Uint8Array> = {};
   let total = 0,
-    ocr: import('tesseract.js').Worker | undefined,
+    ocr: OfflineOCR | undefined,
     font: import('pdf-lib').PDFFont | undefined,
     matches = 0,
     ppt: import('pptxgenjs').default | undefined,
@@ -259,14 +260,8 @@ async function raster(
   try {
     if (op === 'ocr') {
       progress('Loading bundled English OCR…');
-      const { createWorker } = await import('tesseract.js');
-      ocr = await createWorker('eng', 1, {
-        workerPath: new URL('/ocr/worker.js', location.origin).href,
-        corePath: new URL('/ocr/core.wasm.js', location.origin).href,
-        langPath: new URL('/ocr/', location.origin).href,
-        workerBlobURL: false,
-        cacheMethod: 'none',
-      });
+      ocr = new OfflineOCR(signal);
+      await ocr.initialize();
       const { default: fk } = await import('@pdf-lib/fontkit');
       out.registerFontkit(fk);
       font = await out.embedFont(await (await fetch('/fonts/document-sans.ttf')).arrayBuffer(), {
@@ -357,15 +352,13 @@ async function raster(
             ppt.layout = 'PAGE';
           }
           const scale = Math.min(pw / w, ph / h);
-          ppt
-            .addSlide()
-            .addImage({
-              data: canvas.toDataURL('image/jpeg', 0.86),
-              x: (pw - w * scale) / 2,
-              y: (ph - h * scale) / 2,
-              w: w * scale,
-              h: h * scale,
-            });
+          ppt.addSlide().addImage({
+            data: canvas.toDataURL('image/jpeg', 0.86),
+            x: (pw - w * scale) / 2,
+            y: (ph - h * scale) / 2,
+            w: w * scale,
+            h: h * scale,
+          });
           continue;
         }
         const page = out.addPage([w, h]);
@@ -376,8 +369,8 @@ async function raster(
           height: h,
         });
         if (ocr && font) {
-          const res = await ocr.recognize(canvas, {}, { text: true, blocks: true });
-          for (const block of res.data.blocks || [])
+          const res = await ocr.recognize(b);
+          for (const block of res.blocks || [])
             for (const para of block.paragraphs)
               for (const line of para.lines) {
                 const t = line.text.replace(/\s+/g, ' ').trim();

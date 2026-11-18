@@ -7,7 +7,8 @@ self.onmessage = async ({ data }) => {
     );
     if (data.op === 'unlock') {
       if (!pdf.isEncrypted) throw Error('This PDF is not encrypted.');
-      if (!data.password || !pdf.isAuthenticated) throw Error('A valid password is required.');
+      if (!data.password || !pdf.isAuthenticated || !pdf.authenticate(data.password).authenticated)
+        throw Error('A valid password is required.');
       pdf.removeProtection();
     } else {
       if (pdf.isEncrypted) throw Error('First unlock a copy with its password.');

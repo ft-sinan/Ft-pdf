@@ -3155,3 +3155,19 @@ select {
     gap: 4px;
   }
 }
+
+.offline-note {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.offline-note summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 600;
+}
+.offline-note p {
+  margin: 6px 0 0;
+}

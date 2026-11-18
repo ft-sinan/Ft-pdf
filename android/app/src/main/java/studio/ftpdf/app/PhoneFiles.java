@@ -30,9 +30,8 @@ final class PhoneFiles {
 
   private static final class Entry {
 
-    final String id = UUID.randomUUID().toString(),
-      name,
-      folder;
+    String id = UUID.randomUUID().toString();
+    final String name, folder;
     final long size, time;
     final File file, root;
     final Uri uri, tree;
@@ -48,6 +47,10 @@ final class PhoneFiles {
       tree = tr;
     }
 
+    String locator() {
+      return file == null ? uri.toString() : file.toString();
+    }
+
     JSONObject json() throws JSONException {
       return new JSONObject()
         .put("id", id)
@@ -55,9 +58,7 @@ final class PhoneFiles {
         .put(
           "source",
           UUID.nameUUIDFromBytes(
-            (file != null ? file.toString() : uri.toString()).getBytes(
-              java.nio.charset.StandardCharsets.UTF_8
-            )
+            locator().getBytes(java.nio.charset.StandardCharsets.UTF_8)
           ).toString()
         )
         .put("folder", folder)
@@ -96,6 +97,14 @@ final class PhoneFiles {
 
   private Set<String> trees(String owner) {
     return new LinkedHashSet<>(prefs.getStringSet("trees:" + owner, Collections.emptySet()));
+  }
+
+  private Set<String> readableTrees(String owner) {
+    Set<String> granted = new HashSet<>();
+    for (UriPermission p : app.getContentResolver().getPersistedUriPermissions())
+      if (p.isReadPermission()) granted.add(p.getUri().toString());
+    granted.retainAll(trees(owner));
+    return granted;
   }
 
   synchronized void link(String owner, Uri tree) throws Exception {
@@ -312,8 +321,15 @@ final class PhoneFiles {
     );
     synchronized (this) {
       if (ticket == generation && owner.equals(library.currentOwner())) {
+        // Keep displayed IDs usable while a refresh of the same source finishes.
+        Map<String, String> previous = new HashMap<>();
+        if (indexed.equals(owner)) for (Entry old : entries.values())
+          previous.put(old.locator(), old.id);
         entries = new LinkedHashMap<>();
-        for (Entry e : sorted) entries.put(e.id, e);
+        for (Entry e : sorted) {
+          e.id = previous.getOrDefault(e.locator(), e.id);
+          entries.put(e.id, e);
+        }
         indexed = owner;
         note = b.exceeds(found.size())
           ? "Showing a bounded scan. Choose a smaller folder to focus the results."
@@ -326,15 +342,21 @@ final class PhoneFiles {
   synchronized JSONObject page(String owner, String query, int offset) throws Exception {
     boolean allowed = allowed(),
       enabled = prefs.getBoolean("scan:" + owner, false);
-    Set<String> linked = trees(owner);
+    Set<String> linked = trees(owner),
+      readable = readableTrees(owner);
     JSONArray folders = new JSONArray(),
       files = new JSONArray();
     for (String t : linked)
-      folders.put(new JSONObject().put("id", key(t)).put("name", display(Uri.parse(t))));
+      folders.put(
+        new JSONObject()
+          .put("id", key(t))
+          .put("name", display(Uri.parse(t)))
+          .put("readable", readable.contains(t))
+      );
     int count = 0;
     String q = query.trim().toLowerCase(Locale.ROOT);
     if (indexed.equals(owner)) for (Entry e : entries.values()) {
-      if (e.file != null && !(allowed && enabled)) continue;
+      if (e.file != null ? !(allowed && enabled) : !readable.contains(e.tree.toString())) continue;
       if (!(e.name + " " + e.folder).toLowerCase(Locale.ROOT).contains(q)) continue;
       if (count++ >= offset && files.length() < PAGE) files.put(e.json());
     }
@@ -361,7 +383,9 @@ final class PhoneFiles {
       ) throw new IOException("File unavailable.");
       return new FileInputStream(e.file);
     }
-    if (!trees(owner).contains(e.tree.toString())) throw new IOException("Folder disconnected.");
+    if (!readableTrees(owner).contains(e.tree.toString())) throw new IOException(
+      "Folder disconnected."
+    );
     InputStream in = app.getContentResolver().openInputStream(e.uri);
     if (in == null) throw new IOException("File unavailable.");
     return in;

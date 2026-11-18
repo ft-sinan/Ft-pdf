@@ -28,8 +28,14 @@ jobs:
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Check the bundled offline tool outputs
         run: |
-          npx playwright install --with-deps --only-shell chromium
-          node tests/device-tools.mjs
+          # Hosted ubuntu-24.04 includes Chrome. Test our APK assets, without a second browser download.
+          export FT_CHROMIUM="$(command -v google-chrome)"
+          "$FT_CHROMIUM" --version
+          set -o pipefail
+          if ! timeout 180s node tests/device-tools.mjs 2>&1 | tee "$RUNNER_TEMP/offline-tools.log"; then
+            python3 -c 'import os,pathlib; print("::error title=Bundled offline tools::"+pathlib.Path(os.environ["RUNNER_TEMP"],"offline-tools.log").read_text()[-1500:].replace("%","%25").replace("\n","%0A"))'
+            exit 1
+          fi
       - name: Check signature and record checksum
         run: |
           mkdir -p "$RUNNER_TEMP/ft-apk"

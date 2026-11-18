@@ -729,6 +729,7 @@ export default function App() {
                     <Suspense fallback={<p role="status">Loading phone documents…</p>}>
                       <PhoneHome
                         key={w.user.id}
+                        owner={w.user.id}
                         photos={() => modal({ kind: 'photos' })}
                         tools={() => modal({ kind: 'toolbox' })}
                         open={(d) => {

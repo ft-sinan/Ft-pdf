@@ -36,13 +36,28 @@ public class PhoneToolsTest {
     return new JSONTokener(ui.js("location.hash.split('/edit/')[1]")).nextValue().toString();
   }
 
+  // Produce a genuine shell-owned file in shared storage, not an app-private test fixture.
+  private void shellText(String path, String value) throws Exception {
+    ParcelFileDescriptor[] pipes = inst.getUiAutomation().executeShellCommandRw("tee " + path);
+    try (InputStream result = new ParcelFileDescriptor.AutoCloseInputStream(pipes[0])) {
+      try (OutputStream input = new ParcelFileDescriptor.AutoCloseOutputStream(pipes[1])) {
+        input.write(value.getBytes("UTF-8"));
+      }
+      ByteArrayOutputStream read = new ByteArrayOutputStream();
+      byte[] buf = new byte[512];
+      int n;
+      while ((n = result.read(buf)) != -1) read.write(buf, 0, n);
+      assertEquals(value, read.toString("UTF-8"));
+    }
+  }
+
   @Test
   public void sharedFilesAppearOnHomeAndOriginalIsUntouched() throws Exception {
     assertTrue(Environment.isExternalStorageManager());
     String name = "FieldLog" + SystemClock.elapsedRealtime() + ".txt",
       path = "/sdcard/Documents/" + name;
     os.executeShellCommand("mkdir -p /sdcard/Documents");
-    os.executeShellCommand("sh -c 'echo shared-original > " + path + "'");
+    shellText(path, "shared-original");
     try (StudioScreen ui = new StudioScreen()) {
       ui.button("Scan my phone");
       ui.button("Open phone file " + name);
@@ -55,6 +70,11 @@ public class PhoneToolsTest {
       ui.value(text, "Private edits stay in Ft PDF");
       assertEquals("Reuse same working copy", copy, id(ui));
       assertEquals("shared-original", os.executeShellCommand("cat " + path).trim());
+      ui.closeEditor();
+      shellText(path, "New version from outside the app");
+      ui.button("Open phone file " + name);
+      ui.value(text, "New version from outside the app");
+      assertNotEquals("Changed source opens as a new copy", copy, id(ui));
       ui.closeEditor();
       ui.button("Manage phone sources");
       ui.button("Stop phone scan");
@@ -70,7 +90,7 @@ public class PhoneToolsTest {
     String dir = "FtFolder" + SystemClock.elapsedRealtime(),
       p = "/sdcard/Download/" + dir;
     os.executeShellCommand("mkdir -p " + p);
-    os.executeShellCommand("sh -c 'echo folder-only > " + p + "/Folder-note.txt'");
+    shellText(p + "/Folder-note.txt", "folder-only");
     try (StudioScreen ui = new StudioScreen()) {
       ui.button("Choose folder");
       nativeText(Pattern.quote(dir)).click();
@@ -213,6 +233,16 @@ public class PhoneToolsTest {
       String output = "FtParts" + SystemClock.elapsedRealtime(),
         path = "/sdcard/Download/" + output + ".zip";
       ui.fill("input[placeholder='Name your new copy']", output);
+      ui.button("Run tool");
+      nativeText("(?i)^save$");
+      os.pressBack();
+      if (!os.wait(Until.gone(By.text(Pattern.compile("(?i)^save$"))), 1500)) os.pressBack();
+      ui.await("cancelled export", "document.body.innerText.includes('Export cancelled.')");
+      assertEquals(
+        "Cancelled export releases temporary copies",
+        0,
+        new File(app.getCacheDir(), "incoming-documents").list().length
+      );
       ui.button("Run tool");
       nativeText("(?i)^save$").click();
       ui.await(

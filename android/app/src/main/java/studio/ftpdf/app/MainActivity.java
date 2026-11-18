@@ -438,7 +438,7 @@ public final class MainActivity extends Activity {
       ) return denied(404);
       if (path.startsWith("/ocr/") && path.endsWith(".js")) h.put(
         "Content-Security-Policy",
-        "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'none'"
+        "default-src 'none'; script-src 'wasm-unsafe-eval'; connect-src data:; worker-src 'none'"
       );
       if (path.equals("/index.html")) h.put(
         "Content-Security-Policy",
@@ -749,6 +749,9 @@ public final class MainActivity extends Activity {
   @Override
   protected void onDestroy() {
     if (picker != null) picker.onReceiveValue(null);
+    if (
+      isFinishing() && pendingExport != null && pendingExport.startsWith("temp:")
+    ) library.finishExport(pendingExport.substring(5));
     scans.shutdownNow();
     io.shutdown();
     if (web != null) {

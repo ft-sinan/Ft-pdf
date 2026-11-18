@@ -39,7 +39,7 @@
     "react-dom": "^19.3.1",
     "readable-stream": "^3.6.2",
     "sanitize-html": "^2.18.2",
-    "tesseract.js": "^6.0.1",
+    "tesseract.js": "6.0.1",
     "util": "^0.12.5",
     "word-extractor": "^1.0.4",
     "yauzl": "^3.4.0"
@@ -53,5 +53,10 @@
     "supertest": "^7.3.2",
     "typescript": "^5.9.3",
     "vite": "^7.3.8"
+  },
+  "overrides": {
+    "pptxgenjs": {
+      "image-size": "$image-size"
+    }
   }
 }

@@ -19,13 +19,22 @@ for (const [from, to] of [
   await cp(`node_modules/pdfjs-dist/${from}`, join(studio, 'pdf-assets', to), { recursive: true });
 await mkdir(join(studio, 'ocr'), { recursive: true });
 for (const [from, to] of [
-  ['tesseract.js/dist/worker.min.js', 'worker.js'],
+  ['tesseract.js/LICENSE.md', 'tesseract.LICENSE'],
   ['tesseract.js/dist/worker.min.js.LICENSE.txt', 'worker.LICENSE.txt'],
-  ['tesseract.js-core/tesseract-core-lstm.wasm.js', 'core.wasm.js'],
   ['tesseract.js-core/LICENSE', 'core.LICENSE'],
   ['@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz', 'eng.traineddata.gz'],
 ])
   await cp(join('node_modules', from), join(studio, 'ocr', to));
+// Classic worker: define TesseractCore before the worker attaches its message listener.
+// Its embedded WASM and the model (sent as bytes) require no network from the worker.
+await writeFile(
+  join(studio, 'ocr', 'worker.js'),
+  Buffer.concat([
+    await readFile('node_modules/tesseract.js-core/tesseract-core-lstm.wasm.js'),
+    Buffer.from('\n;\n'),
+    await readFile('node_modules/tesseract.js/dist/worker.min.js'),
+  ]),
+);
 const html = join(studio, 'index.html');
 await writeFile(html, (await readFile(html, 'utf8')).replace(/\s*<link rel="manifest"[^>]+>/, ''));
 await mkdir(seed, { recursive: true });

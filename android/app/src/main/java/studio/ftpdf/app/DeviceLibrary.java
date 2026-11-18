@@ -662,6 +662,9 @@ final class DeviceLibrary extends SQLiteOpenHelper {
     }
     String u = owner(),
       id = a.optString("id", "");
+    if (a.has("expectedOwner") && !u.equals(a.getString("expectedOwner"))) throw error(
+      "The library changed. Reopen the phone document."
+    );
     switch (op) {
       case "login":
       case "logout":

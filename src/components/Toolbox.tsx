@@ -102,6 +102,14 @@ export default function Toolbox({
           );
         })}
         {!list.length && <p>No tools match this search.</p>}
+        <details className="offline-note">
+          <summary>What’s supported offline?</summary>
+          <p>
+            OCR recognizes English. Office conversions work with text, values or page images rather
+            than recreating a complex layout. Signatures are handwritten marks. Certified PDF/A,
+            translation and remote signing are not included. No documents are uploaded.
+          </p>
+        </details>
       </div>
     </Modal>
   );

@@ -26,16 +26,18 @@ type Entry = {
 type Page = {
   allowed: boolean;
   enabled: boolean;
-  folders: { id: string; name: string }[];
+  folders: { id: string; name: string; readable: boolean }[];
   files: Entry[];
   total: number;
   notice: string;
 };
 export default function PhoneHome({
+  owner,
   open,
   photos,
   tools,
 }: {
+  owner: string;
   open: (d: Doc) => void;
   photos: () => void;
   tools: () => void;
@@ -61,8 +63,15 @@ export default function PhoneHome({
     tick((n) => n + 1);
   }, []);
   useEffect(() => {
+    const recheck = () => {
+      if (!document.hidden) scanned((n) => n + 1);
+    };
+    document.addEventListener('visibilitychange', recheck);
     window.addEventListener('ft:sources', rescan);
-    return () => window.removeEventListener('ft:sources', rescan);
+    return () => {
+      document.removeEventListener('visibilitychange', recheck);
+      window.removeEventListener('ft:sources', rescan);
+    };
   }, [rescan]);
   useEffect(() => {
     let live = true;
@@ -117,12 +126,16 @@ export default function PhoneHome({
         ).join(''),
         source = f.source + ':' + hash;
       if (!mounted.current) return;
-      let d = await rpc<Doc | null>('copy.find', { source });
+      let d = await rpc<Doc | null>('copy.find', { source, expectedOwner: owner });
       if (!d) {
         const { imported } = await import('../device/formats');
         const { bytes, content, ...meta } = await imported(new File([blob], f.name));
         if (!mounted.current) return;
-        d = await store<Doc>({ ...meta, source, imported: true }, bytes, content);
+        d = await store<Doc>(
+          { ...meta, source, imported: true, expectedOwner: owner },
+          bytes,
+          content,
+        );
       }
       if (mounted.current) open(d);
     } catch (e) {
@@ -131,7 +144,8 @@ export default function PhoneHome({
       if (mounted.current) setLoading('');
     }
   }
-  const connected = page && ((page.enabled && page.allowed) || page.folders.length > 0);
+  const connected =
+    page && ((page.enabled && page.allowed) || page.folders.some((f) => f.readable));
   return (
     <div className="phone-home">
       <div className="quick-actions">
@@ -210,6 +224,7 @@ export default function PhoneHome({
                 aria-label={'Disconnect ' + f.name}
               >
                 {f.name}
+                {!f.readable && ' · access lost'}
                 <X size={13} />
               </button>
             ))}
