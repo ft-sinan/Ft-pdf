@@ -11,8 +11,30 @@ async function edit(page: Page) {
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await expect(page.locator('.editor-tools')).toBeVisible();
 }
+async function addFixture(page: Page, type: 'pdf' | 'docx') {
+  const filename = type === 'pdf' ? 'field-sheets.pdf' : 'brief.docx';
+  const bytes = await (await import('node:fs/promises')).readFile('tests/fixtures/' + filename);
+  const res = await page.request.post('/api/documents/import', {
+    multipart: {
+      file: {
+        name: filename,
+        mimeType:
+          type === 'pdf'
+            ? 'application/pdf'
+            : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        buffer: bytes,
+      },
+    },
+  });
+  expect(res.status()).toBe(201);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Workspace overview' })).toBeVisible();
+}
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
+  await page.getByRole('button', { name: 'Skip tour' }).click();
+  await page.getByLabel('Your name').fill('Library reader');
+  await page.getByRole('button', { name: 'Open my library' }).click();
   await expect(page.getByRole('heading', { name: 'Workspace overview' })).toBeVisible();
 });
 test('create, edit and download text, then rename, trash and restore it', async ({ page }) => {
@@ -41,7 +63,7 @@ test('create, edit and download text, then rename, trash and restore it', async 
   await page.getByLabel('Download document').click();
   expect((await dl).suggestedFilename()).toBe('Writing log.txt');
   await page.getByLabel('Back to workspace').click();
-  await page.getByRole('button', { name: 'All documents 13' }).click();
+  await page.getByRole('button', { name: 'All documents 1' }).click();
   await page.getByLabel('Actions for Writing log', { exact: true }).click();
   await page.getByRole('button', { name: 'Rename', exact: true }).click();
   await page.getByLabel('Document name').fill('Studio journal');
@@ -77,6 +99,7 @@ test('create, edit and download text, then rename, trash and restore it', async 
   await expect(page.getByText('Trash is empty')).toBeVisible();
 });
 test('PDF text annotations are embedded in a saved PDF and it reopens', async ({ page }) => {
+  await addFixture(page, 'pdf');
   await page.getByRole('button', { name: 'Continue reading' }).click();
   await expect(page.getByLabel('PDF page 1 of 3')).toBeVisible();
   await edit(page);
@@ -123,8 +146,9 @@ test('import HTML, edit its source and view a sandboxed preview', async ({ page 
   await expect(page.getByText('Changes saved', { exact: true })).toBeVisible();
 });
 test('search, edit Word, and keep theme preferences', async ({ page }) => {
+  await addFixture(page, 'docx');
   await page.keyboard.press('Control+k');
-  await page.getByPlaceholder('Find a document by name or format…').fill('Project proposal');
+  await page.getByPlaceholder('Find a document by name or format…').fill('brief.docx');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('article', { name: 'Word document content' })).toContainText(
     'Timeline',
@@ -163,7 +187,7 @@ test('phone navigation, collection creation, registration and sign in', async ({
   await expect(page.getByText('A fresh start')).toBeVisible();
   const email = `author-${Date.now()}@example.test`;
   await page.getByLabel('Open navigation').click();
-  await page.getByRole('button', { name: /Alex Morgan Demo workspace/ }).click();
+  await page.getByRole('button', { name: /Library reader Guest workspace/ }).click();
   await page.getByRole('button', { name: 'Create account', exact: true }).click();
   await page.getByLabel('Your name').fill('Taylor Lane');
   await page.getByLabel('Email address').fill(email);
@@ -179,7 +203,7 @@ test('phone navigation, collection creation, registration and sign in', async ({
   await page.getByRole('dialog').getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByText('Signed out', { exact: true })).toBeVisible();
   await page.getByLabel('Open navigation').click();
-  await page.getByRole('button', { name: /Alex Morgan Demo workspace/ }).click();
+  await page.getByRole('button', { name: /Guest Guest workspace/ }).click();
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.getByLabel('Email address').fill(email);
   await page.getByLabel('Password', { exact: true }).fill('paper-studio-2026');

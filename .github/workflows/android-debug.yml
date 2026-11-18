@@ -39,14 +39,15 @@ jobs:
       - name: Check signature and record checksum
         run: |
           set -euo pipefail
-          trap 'echo "::error title=APK packaging::Failed at line $LINENO: $BASH_COMMAND"; if [ -f entries.txt ]; then grep -E "^assets/(studio/(ocr/|index.html|assets/(pdf.worker|codec.worker))|seed/manifest)" entries.txt || true; fi' ERR
+          trap 'echo "::error title=APK packaging::Failed at line $LINENO: $BASH_COMMAND"; if [ -f entries.txt ]; then grep -E "^assets/(studio/(ocr/|index.html|assets/(pdf.worker|codec.worker))|creator-contacts)" entries.txt || true; fi' ERR
           mkdir -p "$RUNNER_TEMP/ft-apk"
           cp android/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/ft-apk/ft-pdf-debug.apk"
           cd "$RUNNER_TEMP/ft-apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose ft-pdf-debug.apk
           unzip -Z1 ft-pdf-debug.apk > entries.txt
           grep -q '^assets/studio/index.html$' entries.txt
-          grep -q '^assets/seed/manifest.json$' entries.txt
+          grep -qx 'assets/creator-contacts.json' entries.txt
+          if grep -q '^assets/seed/' entries.txt; then echo '::error::Sample library assets must not ship'; exit 1; fi
           # Use a neutral asset suffix: mergeAssets treats .gz files specially.
           grep -qx 'assets/studio/ocr/english-model.bin' entries.txt
           for file in worker.js english-model.bin; do

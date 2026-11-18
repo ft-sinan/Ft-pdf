@@ -21,8 +21,8 @@ import java.util.concurrent.Executors;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** The UI, editors, fonts, example documents and backend all ship inside the APK. */
-public final class MainActivity extends Activity {
+/** The UI, readers, editors, fonts and backend all ship inside the APK. */
+public class MainActivity extends Activity {
 
   private static final String HOST = "appassets.androidplatform.net",
     ORIGIN = "https://" + HOST;
@@ -71,9 +71,50 @@ public final class MainActivity extends Activity {
     startActivityForResult(i, CAMERA);
   }
 
+  protected boolean externalReader() {
+    return false;
+  }
+
+  private boolean pdfView(Intent i) {
+    if (
+      i == null ||
+      !Intent.ACTION_VIEW.equals(i.getAction()) ||
+      i.getData() == null ||
+      !"content".equals(i.getData().getScheme())
+    ) return false;
+    Uri uri = i.getData();
+    if ((getPackageName() + ".capture").equals(uri.getAuthority())) return false;
+    try {
+      return (
+        "application/pdf".equalsIgnoreCase(i.resolveType(this)) ||
+        (uri.getLastPathSegment() != null &&
+          uri.getLastPathSegment().toLowerCase(Locale.ROOT).endsWith(".pdf"))
+      );
+    } catch (RuntimeException unavailable) {
+      return false;
+    }
+  }
+
+  private void forwardPdf(Intent i) {
+    // Older defaults may explicitly address MainActivity. Forward only the read grant.
+    Intent reader = new Intent(Intent.ACTION_VIEW)
+      .setClass(this, OpenPdfActivity.class)
+      .setDataAndType(i.getData(), "application/pdf");
+    try {
+      startActivity(reader.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
+    } catch (SecurityException expired) {
+      startActivity(reader.setFlags(0));
+    }
+  }
+
   @Override
   public void onCreate(Bundle state) {
     super.onCreate(state);
+    if (!externalReader() && pdfView(getIntent())) {
+      forwardPdf(getIntent());
+      finish();
+      return;
+    }
     root = new FrameLayout(this);
     root.setBackgroundColor(CREAM);
     setContentView(root);
@@ -90,6 +131,10 @@ public final class MainActivity extends Activity {
     );
     library = DeviceLibrary.instance(this);
     phone = new PhoneFiles(this, library);
+    if (externalReader() && !pdfView(getIntent())) {
+      showError("This PDF is unavailable. Go back and open it again from Files.");
+      return;
+    }
     if (state == null) queue(getIntent());
     else {
       pendingExport = state.getString("export");
@@ -321,6 +366,9 @@ public final class MainActivity extends Activity {
                 }
               });
               return;
+            } else if (op.equals("reader.close") && externalReader()) {
+              runOnUiThread(this::finish);
+              value = true;
             } else if (op.equals("inbox.list")) value = inboxList();
             else if (op.equals("inbox.done")) {
               inbox.remove(a.getString("id"));
@@ -349,7 +397,7 @@ public final class MainActivity extends Activity {
         });
       }
     );
-    web.loadUrl(ORIGIN + "/index.html");
+    web.loadUrl(ORIGIN + "/index.html" + (externalReader() ? "#/open-pdf" : ""));
   }
 
   private Set<String> creatorLinks() {
@@ -570,7 +618,10 @@ public final class MainActivity extends Activity {
             if (!c.isNull(1)) size = c.getLong(1);
           }
         } catch (Exception ignored) {}
-        String type = getContentResolver().getType(item.getValue());
+        String type = null;
+        try {
+          type = getContentResolver().getType(item.getValue());
+        } catch (RuntimeException ignored) {}
         if (!name.contains(".") && type != null) {
           int ix = Arrays.asList(TYPES).indexOf(type);
           if (ix >= 0) name += new String[] { ".pdf", ".doc", ".docx", ".txt", ".html" }[ix];
@@ -758,10 +809,24 @@ public final class MainActivity extends Activity {
   }
 
   @Override
+  protected void onResume() {
+    super.onResume();
+    if (web != null && !externalReader()) web.evaluateJavascript(
+      "window.dispatchEvent(new Event('ft:resume'))",
+      null
+    );
+  }
+
+  @Override
   protected void onNewIntent(Intent i) {
     super.onNewIntent(i);
     // The inbox owns pending grants. Do not replace the activity’s launch intent
     // with an already-consumed file when a second document is opened.
+    if (pdfView(i)) {
+      forwardPdf(i);
+      return;
+    }
+    if (externalReader()) return;
     queue(i);
     if (web != null) web.evaluateJavascript("window.dispatchEvent(new Event('ft:inbox'))", null);
   }

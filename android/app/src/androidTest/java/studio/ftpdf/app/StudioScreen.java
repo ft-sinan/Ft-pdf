@@ -14,13 +14,21 @@ import org.json.JSONObject;
 final class StudioScreen implements AutoCloseable {
 
   final Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
-  final ActivityScenario<MainActivity> activity = ActivityScenario.launch(MainActivity.class);
+  final ActivityScenario<? extends MainActivity> activity;
+
+  StudioScreen(ActivityScenario<? extends MainActivity> activity) {
+    this.activity = activity;
+  }
 
   StudioScreen() throws Exception {
-    await(
-      "direct launch into the library",
-      "document.querySelector('h1')?.textContent==='Workspace overview'"
-    );
+    this(ActivityScenario.launch(MainActivity.class));
+    await("library or first-run welcome", "!!q('.first-run,.app-shell')");
+    if ("true".equals(js("!!q('.first-run')"))) {
+      button("Skip tour");
+      fill("input[name=displayName]", "Test reader");
+      button("Open my library");
+    }
+    value("h1", "Workspace overview");
   }
 
   String js(String expr) throws Exception {

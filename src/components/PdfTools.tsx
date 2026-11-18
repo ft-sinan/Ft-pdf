@@ -34,11 +34,13 @@ export default function PdfTools({
   commit,
   close,
   hasMarks,
+  saveLabel = 'Save PDF changes',
 }: {
   load: () => Promise<Blob>;
   commit: (blob: Blob) => Promise<void>;
   close: () => void;
   hasMarks: boolean;
+  saveLabel?: string;
 }) {
   const [original, setOriginal] = useState<Uint8Array<ArrayBuffer> | null>(null),
     [pages, setPages] = useState<Sheet[]>([]),
@@ -323,7 +325,8 @@ export default function PdfTools({
               disabled={busy || (!dirty && !Object.keys(values).length)}
               onClick={() => void save()}
             >
-              {busy ? <Spin /> : <Save size={15} />}Save PDF changes
+              {busy ? <Spin /> : <Save size={15} />}
+              {saveLabel}
             </button>
           </div>
         </>

@@ -14,7 +14,7 @@ import {
   pdfInfo,
   titleOf,
 } from './formats.mjs';
-import { openStore, workspace, findDoc, createDemo, insertDoc, log } from './store.mjs';
+import { openStore, workspace, findDoc, createGuest, insertDoc, log } from './store.mjs';
 const derive = promisify(scrypt),
   digest = (s) => createHash('sha256').update(s).digest('hex');
 const themes = ['terracotta', 'espresso', 'forest', 'midnight'],
@@ -87,9 +87,9 @@ export function createApi(dbPath = process.env.FT_DB || 'data/ft-pdf.sqlite') {
   });
   api.use(express.json({ limit: '26mb' }));
   api.get('/health', (_req, res) => res.json({ status: 'ok' }));
-  api.get('/workspace', async (req, res) => {
+  api.get('/workspace', (req, res) => {
     if (!req.user) {
-      req.user = await createDemo(db);
+      req.user = createGuest(db);
       startSession(req, res, req.user);
     }
     res.json(workspace(db, req.user));
@@ -130,7 +130,7 @@ export function createApi(dbPath = process.env.FT_DB || 'data/ft-pdf.sqlite') {
       hash = Buffer.from(await derive(pw, salt, 64)).toString('hex');
     if (db.prepare('SELECT id FROM users WHERE email=?').get(email))
       throw fail(409, 'An account with this email already exists. Sign in instead.');
-    db.prepare('UPDATE users SET name=?,email=?,password=? WHERE id=?').run(
+    db.prepare('UPDATE users SET name=?,email=?,password=?,needs_setup=0 WHERE id=?').run(
       name,
       email,
       `${salt}:${hash}`,
@@ -155,9 +155,19 @@ export function createApi(dbPath = process.env.FT_DB || 'data/ft-pdf.sqlite') {
     res.json(workspace(db, u.id));
   });
   api.post('/auth/logout', async (req, res) => {
-    const id = await createDemo(db);
+    const id = createGuest(db, false);
     startSession(req, res, id);
     res.json(workspace(db, id));
+  });
+  api.patch('/profile', (req, res) => {
+    // The optional birthday is browser-local; this endpoint only accepts a display name.
+    const body = req.body || {};
+    if (body.expectedOwner !== req.user)
+      throw fail(409, 'The active workspace changed. Reopen your profile.');
+    if (Object.keys(body).some((k) => k !== 'name' && k !== 'expectedOwner'))
+      throw fail(400, 'Unsupported profile field.');
+    db.prepare('UPDATE users SET name=?,needs_setup=0 WHERE id=?').run(nameOf(body.name), req.user);
+    res.json(workspace(db, req.user).user);
   });
   api.patch('/settings', (req, res) => {
     if (req.body.theme !== undefined) {
@@ -255,6 +265,8 @@ export function createApi(dbPath = process.env.FT_DB || 'data/ft-pdf.sqlite') {
     res.status(201).json(d);
   });
   api.post('/documents/import', upload, async (req, res) => {
+    if (req.get('X-Ft-Owner') && req.get('X-Ft-Owner') !== req.user)
+      throw fail(409, 'The active workspace changed. Reopen the PDF before saving a copy.');
     if (!req.file) throw fail(400, 'Choose a file to import.');
     const c = col(req.user, req.body.collectionId);
     const f = await importFile(req.body.name || req.file.originalname, req.file.buffer);
@@ -360,15 +372,13 @@ export function createApi(dbPath = process.env.FT_DB || 'data/ft-pdf.sqlite') {
     const tooBig = err.code === 'LIMIT_FILE_SIZE';
     const status = tooBig ? 413 : err.status || (err instanceof multer.MulterError ? 400 : 500);
     if (status >= 500) console.error(err);
-    res
-      .status(status)
-      .json({
-        error: tooBig
-          ? 'Files must be 25 MB or smaller.'
-          : status >= 500
-            ? 'The workspace could not complete this request. Please try again.'
-            : err.message,
-      });
+    res.status(status).json({
+      error: tooBig
+        ? 'Files must be 25 MB or smaller.'
+        : status >= 500
+          ? 'The workspace could not complete this request. Please try again.'
+          : err.message,
+    });
   });
   return { app, db };
 }

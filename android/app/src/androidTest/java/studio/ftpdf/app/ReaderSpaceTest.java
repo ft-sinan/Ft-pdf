@@ -17,8 +17,9 @@ public class ReaderSpaceTest {
 
   @Test
   public void scrollPdfThenEditAndReadAgain() throws Exception {
+    TestFiles.libraryPdf("Scroll sheets");
     try (StudioScreen ui = new StudioScreen()) {
-      ui.button("Open Quarterly report.pdf");
+      ui.button("Open Scroll sheets.pdf");
       ui.reader();
       ui.visible("canvas[data-rendered='true'][aria-label='PDF page 1 of 3']");
       ui.await(

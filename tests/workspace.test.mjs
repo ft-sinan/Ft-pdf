@@ -22,20 +22,46 @@ const readBuffer = (res, cb) => {
 };
 const file = async (agent, id) =>
   (await agent.get(`/api/documents/${id}/file`).buffer(true).parse(readBuffer).expect(200)).body;
-test('first visit provisions an isolated, reusable workspace with real, downloadable files', async (t) => {
+test('new libraries are empty and isolated, and setup persists only after a valid profile save', async (t) => {
   const { agent, w, app } = await fixture(t);
-  assert.equal(w.documents.length, 12);
-  assert.equal(w.collections.length, 3);
-  assert.equal(w.documents.filter((d) => d.starred).length, 3);
-  assert.equal(w.user.isDemo, true);
-  assert.equal((await agent.get('/api/workspace')).body.user.id, w.user.id);
-  const pdf = w.documents.find((d) => d.type === 'pdf');
-  assert.equal((await PDFDocument.load(await file(agent, pdf.id))).getPageCount(), 3);
-  const doc = w.documents.find((d) => d.type === 'docx');
+  assert.deepEqual([w.documents, w.collections, w.activity], [[], [], []]);
+  assert.equal(w.user.isGuest, true);
+  assert.equal(w.user.needsSetup, true);
+  const profile = '/api/profile',
+    expectedOwner = w.user.id;
+  await agent.patch(profile).send({ expectedOwner: 'wrong-owner', name: 'Not mine' }).expect(409);
+  await agent.patch(profile).send({ expectedOwner, name: '  ' }).expect(400);
+  await agent
+    .patch(profile)
+    .send({ expectedOwner, name: 'Mira', birthDate: '2000-01-01' })
+    .expect(400);
+  assert.equal((await agent.get('/api/workspace')).body.user.needsSetup, true);
+  const { body: user } = await agent
+    .patch(profile)
+    .send({ expectedOwner, name: ' Mira ' })
+    .expect(200);
+  assert.equal(user.name, 'Mira');
+  assert.equal(user.id, w.user.id);
+  assert.equal(user.needsSetup, false);
+  assert.ok(!('birthDate' in user));
+  assert.deepEqual((await agent.get('/api/workspace')).body.user, user);
+  const { body: pdf } = await agent
+    .post('/api/documents')
+    .send({ name: 'Blank page', type: 'pdf' })
+    .expect(201);
+  assert.equal((await PDFDocument.load(await file(agent, pdf.id))).getPageCount(), 1);
+  const { body: doc } = await agent
+    .post('/api/documents/import')
+    .attach('file', 'tests/fixtures/brief.docx')
+    .expect(201);
   assert.match(
     (await mammoth.extractRawText({ buffer: await file(agent, doc.id) })).value,
-    /Project overview/,
+    /Timeline/,
   );
+  const { body: c } = await agent
+    .post('/api/collections')
+    .send({ name: 'Personal', color: 'sage' })
+    .expect(201);
   const other = request.agent(app);
   await other.get('/api/workspace');
   for (const action of ['file', 'content'])
@@ -43,7 +69,7 @@ test('first visit provisions an isolated, reusable workspace with real, download
   await other.patch(`/api/documents/${doc.id}`).send({ name: 'Not mine' }).expect(404);
   await other
     .post('/api/documents')
-    .send({ name: 'Bad', type: 'txt', collectionId: w.collections[0].id })
+    .send({ name: 'Bad', type: 'txt', collectionId: c.id })
     .expect(404);
   await request(app).post('/api/documents').send({ type: 'txt', name: 'No session' }).expect(401);
 });
@@ -151,12 +177,14 @@ test('imports preserve originals and edits are exported in their real formats', 
     .attach('file', Buffer.from('bad'), 'unknown.bin')
     .expect(415);
 });
-test('registration claims demo data; login, preferences, and files survive a restart', async (t) => {
+test('registration claims real guest files; login, preferences, and files survive a restart', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'ft-workspace-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, 'workspace.sqlite');
   let backend = createApi(path);
   let a = request.agent(backend.app);
+  await a.get('/api/workspace');
+  await a.post('/api/documents').send({ name: 'Before registration', type: 'txt' }).expect(201);
   const original = (await a.get('/api/workspace')).body;
   await a
     .post('/api/auth/register')
@@ -168,7 +196,7 @@ test('registration claims demo data; login, preferences, and files survive a res
     .expect(201);
   assert.equal(registered.user.id, original.user.id);
   assert.equal(registered.user.email, 'mira@example.test');
-  assert.equal(registered.user.isDemo, false);
+  assert.equal(registered.user.isGuest, false);
   assert.equal(registered.documents[0].id, original.documents[0].id);
   assert.notEqual(
     backend.db.prepare('SELECT password FROM users WHERE id=?').get(original.user.id).password,
@@ -184,6 +212,8 @@ test('registration claims demo data; login, preferences, and files survive a res
     .send({ content: 'Still here after a restart.' })
     .expect(200);
   const { body: guest } = await a.post('/api/auth/logout').expect(200);
+  assert.deepEqual(guest.documents, []);
+  assert.equal(guest.user.needsSetup, false);
   assert.notEqual(guest.user.id, original.user.id);
   await a.get(`/api/documents/${d.id}/content`).expect(404);
   backend.db.close();
@@ -205,6 +235,43 @@ test('registration claims demo data; login, preferences, and files survive a res
   assert.equal(
     (await a.get(`/api/documents/${d.id}/content`)).body.content,
     'Still here after a restart.',
+  );
+});
+test('upgrading an existing unregistered library preserves the session, documents, name and preferences', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'ft-upgrade-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, 'stored.sqlite');
+  const before = createApi(path);
+  const a = request.agent(before.app);
+  const entry = await a.get('/api/workspace');
+  const cookie = entry.headers['set-cookie'][0].split(';')[0];
+  await a.patch('/api/settings').send({ theme: 'forest', name: 'Existing reader' }).expect(200);
+  const { body: d } = await a
+    .post('/api/documents')
+    .send({ name: 'My revised notes', type: 'txt' })
+    .expect(201);
+  await a.put(`/api/documents/${d.id}/content`).send({ content: 'Keep my work' }).expect(200);
+  // Reproduce the pre-3.2 users table on disk, then reopen it via the real startup path.
+  before.db.exec('ALTER TABLE users DROP COLUMN needs_setup');
+  before.db.close();
+  const after = createApi(path);
+  t.after(() => after.db.close());
+  const { body: w } = await request(after.app)
+    .get('/api/workspace')
+    .set('Cookie', cookie)
+    .expect(200);
+  assert.equal(w.user.needsSetup, false);
+  assert.equal(w.user.id, entry.body.user.id);
+  assert.equal(w.user.name, 'Existing reader');
+  assert.equal(w.user.theme, 'forest');
+  assert.deepEqual(
+    w.documents.map((x) => x.id),
+    [d.id],
+  );
+  assert.equal(
+    (await request(after.app).get(`/api/documents/${d.id}/content`).set('Cookie', cookie)).body
+      .content,
+    'Keep my work',
   );
 });
 test('legacy binary Word imports become editable DOCX files', async (t) => {

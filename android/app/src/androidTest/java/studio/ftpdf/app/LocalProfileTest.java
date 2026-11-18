@@ -20,18 +20,34 @@ public class LocalProfileTest {
 
   @Test
   public void createProfileAndCollection() throws Exception {
-    try (StudioScreen ui = new StudioScreen()) {
-      ui.value(".profile-btn", "Alex Morgan");
+    try (
+      StudioScreen ui = new StudioScreen(
+        androidx.test.core.app.ActivityScenario.launch(MainActivity.class)
+      )
+    ) {
+      ui.value("h1", "Welcome to Ft PDF.");
       androidx.test.uiautomator.UiDevice.getInstance(
         androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
       ).takeScreenshot(new java.io.File(ui.app.getCacheDir(), "first-launch.png"));
-      assertEquals(
-        "seeded sample files",
-        12,
-        ((JSONObject) DeviceLibrary.instance(ui.app).call("workspace", new JSONObject()))
-          .getJSONArray("documents")
-          .length()
+      ui.button("Take the tour");
+      ui.button("Star sample");
+      ui.button("Edit sample");
+      ui.fill(".practice-paper", "Practice only");
+      ui.button("Done");
+      ui.value(".practice-paper", "Practice only");
+      ui.button("Continue to profile");
+      ui.fill("input[name=displayName]", "First reader");
+      ui.fill("input[name=birthday]", "1999-11-05");
+      ui.button("Open my library");
+      ui.value(".profile-btn", "First reader");
+      JSONObject w = (JSONObject) DeviceLibrary.instance(ui.app).call(
+        "workspace",
+        new JSONObject()
       );
+      for (String key : new String[] { "documents", "collections", "activity" })
+        assertEquals("no tour data in " + key, 0, w.getJSONArray(key).length());
+      assertEquals("1999-11-05", w.getJSONObject("user").getString("birthDate"));
+      assertFalse(w.getJSONObject("user").getBoolean("needsSetup"));
       drawer(ui);
       ui.button("New collection");
       ui.fill("input[placeholder='e.g. Studio projects']", "Personal drafts");
@@ -66,6 +82,13 @@ public class LocalProfileTest {
     try (StudioScreen ui = new StudioScreen()) {
       DeviceLibrary db = DeviceLibrary.instance(ui.app);
       ui.value(".profile-btn", "Local reader");
+      assertEquals(
+        "profile date survives process death",
+        "1999-11-05",
+        ((JSONObject) db.call("workspace", new JSONObject()))
+          .getJSONObject("user")
+          .getString("birthDate")
+      );
       ui.await("persisted theme", "document.documentElement.dataset.theme==='espresso'");
       drawer(ui);
       ui.button("Personal drafts");
@@ -77,7 +100,13 @@ public class LocalProfileTest {
       ui.click(".profile-btn");
       ui.button("Sign out");
       ui.click(".modal-footer button:last-child");
-      ui.value(".profile-btn", "Alex Morgan");
+      ui.value(".profile-btn", "Guest");
+      assertTrue(
+        "birth date belongs only to the signed-out owner",
+        ((JSONObject) db.call("workspace", new JSONObject()))
+          .getJSONObject("user")
+          .isNull("birthDate")
+      );
       assertFalse(
         "guest cannot see the collection",
         ui.js("document.body.textContent.includes('Personal drafts')").equals("true")

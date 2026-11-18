@@ -58,19 +58,6 @@ public class OfflineStudioTest {
     }
   }
 
-  private Uri external(String name, String mime, InputStream source) throws Exception {
-    ContentValues values = new ContentValues();
-    values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
-    values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
-    values.put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/");
-    Uri u = app.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-    assertNotNull(u);
-    try (InputStream in = source; OutputStream out = app.getContentResolver().openOutputStream(u)) {
-      copy(in, out);
-    }
-    return u;
-  }
-
   private void view(Uri u, String mime) {
     app.startActivity(
       new Intent(Intent.ACTION_VIEW)
@@ -82,9 +69,6 @@ public class OfflineStudioTest {
 
   @Test
   public void createEditAndReopenPDF() throws Exception {
-    ui.button("Open Quarterly report.pdf");
-    ui.visible("canvas[aria-label^='PDF page 1 of']");
-    ui.closeDocument();
     ui.newDoc("PDF", "Offline pages");
     ui.fill(".pdf-draft", "A report created with no network.");
     ui.button("Create PDF");
@@ -129,25 +113,11 @@ public class OfflineStudioTest {
       String mime = legacy
         ? "application/msword"
         : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-      InputStream in = legacy
-        ? InstrumentationRegistry.getInstrumentation()
-            .getContext()
-            .getAssets()
-            .open("legacy-word.doc")
-        : null;
-      if (!legacy) {
-        JSONArray docs = ((JSONObject) db().call("workspace", new JSONObject())).getJSONArray(
-          "documents"
-        );
-        for (int i = 0; i < docs.length(); i++) {
-          JSONObject d = docs.getJSONObject(i);
-          if (d.getString("name").equals("Project proposal")) in = db()
-            .read(d.getString("id"), false)
-            .stream;
-        }
-      }
-      assertNotNull(in);
-      Uri u = external(legacy ? "legacy-word.doc" : "Imported brief.docx", mime, in);
+      Uri u = TestFiles.external(
+        legacy ? "legacy-word.doc" : "Imported brief.docx",
+        mime,
+        TestFiles.input(legacy ? "legacy-word.doc" : "brief.docx")
+      );
       try {
         view(u, mime);
         ui.button("Import 1 file");

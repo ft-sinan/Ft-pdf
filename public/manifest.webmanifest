@@ -20,11 +20,16 @@
       "purpose": "maskable"
     }
   ],
+  "launch_handler": { "client_mode": "navigate-new" },
   "file_handlers": [
+    {
+      "action": "/?open-pdf",
+      "accept": { "application/pdf": [".pdf"] },
+      "launch_type": "multiple-clients"
+    },
     {
       "action": "/",
       "accept": {
-        "application/pdf": [".pdf"],
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
         "application/msword": [".doc"],
         "text/plain": [".txt"],

@@ -32,6 +32,7 @@ import {
 } from '../types';
 import { FileIcon } from './Art';
 import CreatorSpace from './CreatorSpace';
+import { ProfileFields, type ProfileSave } from './Welcome';
 import { Empty, ErrorNote, Modal, Spin } from './UI';
 export function CollectionField({
   collections,
@@ -621,7 +622,7 @@ export function AuthForm({
                 required
                 maxLength={64}
                 autoComplete="name"
-                placeholder="Alex Morgan"
+                placeholder="Your display name"
               />
             </label>
           )}
@@ -697,19 +698,22 @@ export const themeOptions: { id: Theme; name: string; desc: string; colors: stri
 ];
 export function Settings({
   user,
+  profileSave,
+  tour,
   onClose,
   update,
   auth,
   logout,
 }: {
   user: User;
+  profileSave: ProfileSave;
+  tour: () => void;
   onClose: () => void;
   update: (patch: Partial<User>) => Promise<void>;
   auth: () => void;
   logout: () => void;
 }) {
   const [tab, setTab] = useState<'appearance' | 'account' | 'creator'>('appearance'),
-    [name, setName] = useState(user.name),
     [err, setErr] = useState(''),
     [busy, setBusy] = useState(false);
   const save = async (p: Partial<User>) => {
@@ -790,7 +794,7 @@ export function Settings({
                 <UserRound size={22} />
               </span>
               <div>
-                <strong>{user.isDemo ? 'Demo workspace' : 'Personal account'}</strong>
+                <strong>{user.isGuest ? 'Guest workspace' : 'Personal account'}</strong>
                 <p>
                   {user.email ||
                     (onDevice
@@ -799,28 +803,12 @@ export function Settings({
                 </p>
               </div>
             </div>
-            <form
-              className="stack-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void save({ name: name.trim() });
-              }}
-            >
-              <label className="field">
-                Display name
-                <input
-                  required
-                  value={name}
-                  maxLength={64}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </label>
-              <button className="btn secondary" disabled={busy || name.trim() === user.name}>
-                {busy ? <Spin size={14} /> : null}Save name
-              </button>
-            </form>
-            <button className="text-btn" onClick={user.isDemo ? auth : logout}>
-              {user.isDemo ? 'Create an account' : 'Sign out'}
+            <ProfileFields user={user} save={profileSave} />
+            <button className="text-btn" onClick={tour}>
+              Replay the tour <ArrowRight size={14} />
+            </button>
+            <button className="text-btn" onClick={user.isGuest ? auth : logout}>
+              {user.isGuest ? 'Create an account' : 'Sign out'}
               <ArrowRight size={14} />
             </button>
           </>

@@ -74,6 +74,8 @@ export default function Editor({
   collection,
   close,
   remove,
+  external,
+  closeLabel = 'Back to workspace',
   backAction,
   onDirty,
   onSaved,
@@ -82,7 +84,14 @@ export default function Editor({
   d: Doc;
   collection?: Collection;
   close: () => void;
-  remove: () => void;
+  remove?: () => void;
+  closeLabel?: string;
+  external?: {
+    read: (signal: AbortSignal) => Promise<Response>;
+    protection: (locked: boolean) => void;
+    beginEdit: () => Promise<void>;
+    saveCopy: (blob: Blob) => Promise<Doc>;
+  };
   backAction: React.RefObject<(() => void) | null>;
   onDirty: (b: boolean) => void;
   onSaved: (d: Doc) => void;
@@ -151,6 +160,12 @@ export default function Editor({
     setDirty(s !== original.current);
     setSaveErr('');
   };
+  const persist = (body: Blob | { content: string }) =>
+    external && body instanceof Blob
+      ? external.saveCopy(body)
+      : api<Doc>(`/documents/${d.id}/content`, 'PUT', body, {
+          'If-Unmodified-Since-Ms': String(version.current),
+        });
   const save = async (download = false) => {
     if (saving.current || !ready) return;
     if (!dirty) {
@@ -162,9 +177,7 @@ export default function Editor({
     setSaveErr('');
     try {
       const body = d.type === 'pdf' ? await pdf.current!.exportFile() : { content };
-      const saved = await api<Doc>(`/documents/${d.id}/content`, 'PUT', body, {
-        'If-Unmodified-Since-Ms': String(version.current),
-      });
+      const saved = await persist(body);
       version.current = saved.updated;
       original.current = content;
       setDirty(false);
@@ -232,8 +245,8 @@ export default function Editor({
       <header className="editor-header">
         <button
           className="icon-btn back-btn"
-          aria-label={editing ? 'Back to reader' : 'Back to workspace'}
-          title={editing ? 'Back to reader' : 'Back to workspace'}
+          aria-label={editing ? 'Back to reader' : closeLabel}
+          title={editing ? 'Back to reader' : closeLabel}
           disabled={busy}
           onClick={editing ? requestRead : close}
         >
@@ -245,7 +258,11 @@ export default function Editor({
             <strong title={fileName(d)}>{fileName(d)}</strong>
             <small>
               {editing ? 'Editing' : d.locked ? 'Protected · Read only' : 'Reading'} <i>/</i>{' '}
-              {collection?.name || labels[d.type]}
+              {external
+                ? editing
+                  ? 'Saves a library copy'
+                  : 'Opened from Files'
+                : collection?.name || labels[d.type]}
             </small>
           </span>
         </div>
@@ -256,7 +273,7 @@ export default function Editor({
               {dirty ? 'Unsaved changes' : 'Saved'}
             </span>
           )}
-          {!editing && (
+          {!editing && remove && (
             <button
               className="btn secondary reader-delete"
               aria-label="Delete document"
@@ -267,23 +284,25 @@ export default function Editor({
               <span>Delete</span>
             </button>
           )}
-          <button
-            className="btn secondary download-btn"
-            disabled={busy || (editing && !ready)}
-            aria-label={onDevice ? 'Save a copy to Files' : 'Download document'}
-            title={
-              onDevice
-                ? 'Save a copy to Android Files'
-                : dirty
-                  ? 'Save and download'
-                  : 'Download document'
-            }
-            onClick={() =>
-              editing ? void save(true) : void downloadDoc(d).catch((e) => setSaveErr(message(e)))
-            }
-          >
-            <Download size={16} />
-          </button>
+          {!external && (
+            <button
+              className="btn secondary download-btn"
+              disabled={busy || (editing && !ready)}
+              aria-label={onDevice ? 'Save a copy to Files' : 'Download document'}
+              title={
+                onDevice
+                  ? 'Save a copy to Android Files'
+                  : dirty
+                    ? 'Save and download'
+                    : 'Download document'
+              }
+              onClick={() =>
+                editing ? void save(true) : void downloadDoc(d).catch((e) => setSaveErr(message(e)))
+              }
+            >
+              <Download size={16} />
+            </button>
+          )}
           {editing ? (
             <button
               className="btn primary save-btn"
@@ -291,14 +310,25 @@ export default function Editor({
               onClick={() => void save()}
             >
               {busy ? <Spin size={15} /> : <Save size={15} />}
-              <span>{busy ? 'Saving…' : 'Save changes'}</span>
+              <span>{busy ? 'Saving…' : external ? 'Save a copy' : 'Save changes'}</span>
             </button>
           ) : (
             !d.locked && (
               <button
                 className="btn primary read-edit-btn"
-                disabled={!ready}
-                onClick={() => {
+                disabled={!ready || busy}
+                onClick={async () => {
+                  if (external) {
+                    setBusy(true);
+                    try {
+                      await external.beginEdit();
+                    } catch (e) {
+                      setSaveErr(message(e));
+                      return;
+                    } finally {
+                      setBusy(false);
+                    }
+                  }
                   setInitial(content);
                   setEditing(true);
                 }}
@@ -328,6 +358,8 @@ export default function Editor({
             ref={pdf}
             d={d}
             revision={rev}
+            source={external?.read}
+            onProtection={external?.protection}
             editing={editing}
             busy={busy}
             onReady={setReady}
@@ -337,9 +369,7 @@ export default function Editor({
               saving.current = true;
               setBusy(true);
               try {
-                const saved = await api<Doc>(`/documents/${d.id}/content`, 'PUT', blob, {
-                  'If-Unmodified-Since-Ms': String(version.current),
-                });
+                const saved = await persist(blob);
                 version.current = saved.updated;
                 setDirty(false);
                 onDirty(false);

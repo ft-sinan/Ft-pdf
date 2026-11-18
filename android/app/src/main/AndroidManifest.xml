@@ -5,11 +5,17 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
     <application android:requestLegacyExternalStorage="true" android:label="Ft PDF" android:icon="@drawable/ft_mark" android:theme="@style/AppTheme" android:allowBackup="false" android:enableOnBackInvokedCallback="true" android:usesCleartextTraffic="false">
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.capture" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/capture_paths"/></provider>
+        <activity android:name=".OpenPdfActivity" android:exported="true" android:documentLaunchMode="always" android:taskAffinity="studio.ftpdf.app.pdfreader" android:excludeFromRecents="true" android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|uiMode" android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="content" android:mimeType="application/pdf"/>
+            </intent-filter>
+        </activity>
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|uiMode" android:windowSoftInputMode="adjustResize">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/>
-                <data android:scheme="content"/><data android:mimeType="application/pdf"/><data android:mimeType="application/msword"/><data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document"/><data android:mimeType="text/plain"/><data android:mimeType="text/html"/>
+                <data android:scheme="content"/><data android:mimeType="application/msword"/><data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document"/><data android:mimeType="text/plain"/><data android:mimeType="text/html"/>
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND"/><action android:name="android.intent.action.SEND_MULTIPLE"/><category android:name="android.intent.category.DEFAULT"/>

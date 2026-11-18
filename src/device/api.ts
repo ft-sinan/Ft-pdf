@@ -9,6 +9,7 @@ export async function deviceApi<T>(
   const a = (input || {}) as Record<string, string>;
   if (path === '/workspace') return rpc<T>('workspace');
   if (path.startsWith('/auth/')) return rpc<T>(path.slice(6), a);
+  if (path === '/profile' && method === 'PATCH') return rpc<T>('profile.save', a);
   if (path === '/settings') return rpc<T>('settings', a);
   const [, group, id, action] = path.split('/');
   if (group === 'collections')
@@ -37,7 +38,12 @@ export async function deviceApi<T>(
     const { imported } = await import('./formats'),
       { bytes, content, ...meta } = await imported(f);
     return store<T>(
-      { ...meta, imported: true, collectionId: input.get('collectionId') || null },
+      {
+        ...meta,
+        ...(headers['X-Ft-Owner'] ? { expectedOwner: headers['X-Ft-Owner'] } : {}),
+        imported: true,
+        collectionId: input.get('collectionId') || null,
+      },
       bytes,
       content,
     );

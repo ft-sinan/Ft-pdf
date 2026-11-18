@@ -22,7 +22,10 @@ export type User = {
   name: string;
   email: string | null;
   theme: Theme;
-  isDemo: boolean;
+  isGuest: boolean;
+  needsSetup: boolean;
+  /** Returned only by the on-device library, never the web API. */
+  birthDate?: string | null;
 };
 export type Activity = { id: number; message: string; created: number };
 export type Workspace = {

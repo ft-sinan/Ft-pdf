@@ -55,7 +55,7 @@ import {
   Workspace,
 } from './types';
 import { Brand, DocCard, PaperArt } from './components/Art';
-import { Anchor, Empty, Popup, Spin } from './components/UI';
+import { Anchor, Empty, Modal, Popup, Spin } from './components/UI';
 import {
   AuthForm,
   CollectionForm,
@@ -66,6 +66,9 @@ import {
   SearchDialog,
   Settings,
 } from './components/Forms';
+import Welcome, { PracticeFile } from './components/Welcome';
+import { saveProfile } from './profile';
+import { launchQueue } from './externalPdf';
 import { DocTable, Library, SectionTitle } from './components/Library';
 const Editor = lazy(() => import('./components/Editor'));
 const PhoneHome = lazy(() => import('./components/PhoneHome'));
@@ -86,6 +89,7 @@ type Dialog = {
     | 'logout'
     | 'rename'
     | 'move'
+    | 'tour'
     | 'readerTrash'
     | 'delete'
     | 'removeCollection';
@@ -146,6 +150,7 @@ export default function App() {
     [toast, setToast] = useState<Toast | null>(null),
     [incoming, setIncoming] = useState<File[]>([]),
     [seen, setSeen] = useState(false);
+  const settingUp = !!w?.user.needsSetup;
   const editorBack = useRef<(() => void) | null>(null),
     dirty = useRef(false),
     currentHash = useRef(location.hash),
@@ -194,6 +199,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     const fn = (e: KeyboardEvent) => {
+      if (settingUp) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !route.id) {
         e.preventDefault();
         setPop(null);
@@ -204,9 +210,10 @@ export default function App() {
     };
     window.addEventListener('keydown', fn);
     return () => window.removeEventListener('keydown', fn);
-  }, [route.id]);
+  }, [route.id, settingUp]);
   useEffect(() => {
     const back = (e: Event) => {
+      if (settingUp) return;
       if (document.querySelector('[role="dialog"]')) {
         e.preventDefault();
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -222,7 +229,7 @@ export default function App() {
     };
     window.addEventListener('ft:back', back);
     return () => window.removeEventListener('ft:back', back);
-  }, [drawer, pop, route]);
+  }, [drawer, pop, route, settingUp]);
   useEffect(() => {
     if (!drawer) return;
     const prev = document.body.style.overflow;
@@ -232,7 +239,7 @@ export default function App() {
     };
   }, [drawer]);
   useEffect(() => {
-    if (!onDevice || !w || dialog) return;
+    if (!onDevice || !w || settingUp || dialog) return;
     let live = true,
       busy = false,
       again = false;
@@ -269,25 +276,29 @@ export default function App() {
       live = false;
       window.removeEventListener('ft:inbox', drain);
     };
-  }, [w?.user.id, dialog, notify]);
+  }, [w?.user.id, settingUp, dialog, notify]);
   // Installed applications can open files directly with the OS file picker.
   useEffect(() => {
-    if (onDevice || !w) return;
-    const queue = (
-      window as unknown as {
-        launchQueue?: { setConsumer: (fn: (p: { files: FileSystemFileHandle[] }) => void) => void };
-      }
-    ).launchQueue;
-    queue?.setConsumer(async (p) => {
-      if (p.files?.length) {
-        const f = await Promise.all(p.files.map((h) => h.getFile()));
-        setIncoming(f);
-        setDialog({ kind: 'import' });
+    if (onDevice || !w || settingUp) return;
+    let live = true;
+    launchQueue()?.setConsumer(async ({ files }) => {
+      if (!files?.length) return;
+      try {
+        const f = await Promise.all(files.map((h) => h.getFile()));
+        if (live) {
+          setIncoming(f);
+          setDialog({ kind: 'import' });
+        }
+      } catch (e) {
+        if (live) notify(message(e), true);
       }
     });
-  }, [w?.user.id]);
+    return () => {
+      live = false;
+    };
+  }, [w?.user.id, settingUp]);
   useEffect(() => {
-    if (onDevice || !w || !('caches' in window)) return;
+    if (onDevice || !w || settingUp || !('caches' in window)) return;
     const url = new URL(location.href);
     if (!url.searchParams.has('shared')) return;
     let live = true;
@@ -321,7 +332,7 @@ export default function App() {
     return () => {
       live = false;
     };
-  }, [w?.user.id, notify]);
+  }, [w?.user.id, settingUp, notify]);
   const nav = (v: View, id?: string) => {
     setPop(null);
     setDrawer(false);
@@ -354,7 +365,7 @@ export default function App() {
     if (!d.trashed) nav(route.view, d.id);
   };
   useEffect(() => {
-    if (!w || !route.id) return;
+    if (!w || settingUp || !route.id) return;
     let live = true;
     api<Doc>(`/documents/${route.id}/open`, 'POST')
       .then((opened) => {
@@ -376,7 +387,7 @@ export default function App() {
     return () => {
       live = false;
     };
-  }, [route.id, w?.user.id, notify]);
+  }, [route.id, w?.user.id, settingUp, notify]);
   function showPop(kind: Pop['kind'], e: React.MouseEvent, d?: Doc) {
     const r = e.currentTarget.getBoundingClientRect();
     setPop({ kind, anchor: { top: r.top, left: r.left, right: r.right, bottom: r.bottom }, d });
@@ -427,7 +438,49 @@ export default function App() {
       throw e;
     }
   };
+  useEffect(() => {
+    // A separate OS reader can save a working copy while this WebView is suspended.
+    // Refresh metadata, not the route/editor; a draft behind the reader stays mounted.
+    const token = () => {
+      try {
+        return localStorage.getItem('ft:library-change');
+      } catch {
+        return null;
+      }
+    };
+    let last = token(),
+      live = true;
+    const refresh = () => {
+      const current = token();
+      if (!current || current === last) return;
+      last = current;
+      void api<Workspace>('/workspace')
+        .then((f) => {
+          if (live && last === current)
+            setW((s) =>
+              s?.user.id === f.user.id ? { ...s, documents: f.documents, activity: f.activity } : s,
+            );
+        })
+        .catch((e) => {
+          last = null;
+          if (live) notify(message(e), true);
+        });
+    };
+    window.addEventListener('storage', refresh);
+    window.addEventListener('ft:resume', refresh);
+    return () => {
+      live = false;
+      window.removeEventListener('storage', refresh);
+      window.removeEventListener('ft:resume', refresh);
+    };
+  }, [notify]);
   if (!w) return <Boot error={error} retry={() => void load()} />;
+  const profileSave = async (name: string, date: string) => {
+    const user = await saveProfile(w.user, name, date);
+    setW((s) => (s?.user.id === user.id ? { ...s, user } : s));
+    if (!settingUp) notify('Profile saved');
+  };
+  if (settingUp) return <Welcome user={w.user} save={profileSave} />;
   const { view, id } = route,
     collections = w.collections,
     active = w.documents.filter((d) => !d.trashed),
@@ -613,7 +666,7 @@ export default function App() {
                   aria-valuemin={0}
                   aria-valuemax={w.quota}
                 >
-                  <i style={{ width: `max(4px,${(used / w.quota) * 100}%)` }} />
+                  <i style={{ width: used ? `max(4px,${(used / w.quota) * 100}%)` : 0 }} />
                 </div>
                 <p>
                   <strong>{sizeOf(used)}</strong> of {Math.round(w.quota / 1048576)} MB used
@@ -637,7 +690,7 @@ export default function App() {
                 <span className="avatar">{initials(w.user.name)}</span>
                 <span>
                   <strong>{w.user.name}</strong>
-                  <small>{w.user.isDemo ? 'Demo workspace' : 'Personal account'}</small>
+                  <small>{w.user.isGuest ? 'Guest workspace' : 'Personal account'}</small>
                 </span>
                 <ChevronsUpDown size={14} />
               </button>
@@ -681,7 +734,7 @@ export default function App() {
                   onClick={(e) => showPop('activity', e)}
                 >
                   <Bell size={19} />
-                  {!seen && <i />}
+                  {!seen && w.activity.length > 0 && <i />}
                 </button>
               </div>
             </header>
@@ -701,7 +754,9 @@ export default function App() {
                   <h1>{view === 'overview' ? 'Workspace overview' : title}</h1>
                   <p>
                     {view === 'overview'
-                      ? 'Your documents and collections, all in one place.'
+                      ? active.length
+                        ? 'Your documents and collections, all in one place.'
+                        : `Welcome, ${w.user.name}. Import a file or create your first document.`
                       : view === 'documents'
                         ? 'Browse, edit, and organize your document library.'
                         : view === 'starred'
@@ -914,9 +969,9 @@ export default function App() {
             <>
               <div className="popup-account">
                 <strong>{w.user.name}</strong>
-                <span>{w.user.email || 'Your personal demo workspace'}</span>
+                <span>{w.user.email || 'Your guest workspace'}</span>
               </div>
-              {w.user.isDemo ? (
+              {w.user.isGuest ? (
                 <>
                   {popAct('Create account', <UserRoundPlus />, () => modal({ kind: 'register' }))}
                   {popAct('Sign in', <LogIn />, () => modal({ kind: 'login' }))}
@@ -934,6 +989,7 @@ export default function App() {
                 <strong>Workspace activity</strong>
               </div>
               <div className="activity-list">
+                {!w.activity.length && <p className="muted">No activity yet.</p>}
                 {w.activity.slice(0, 6).map((a) => (
                   <div key={a.id}>
                     <Clock3 size={14} />
@@ -1090,11 +1146,26 @@ export default function App() {
           }}
         />
       )}
+      {dialog?.kind === 'tour' && (
+        <Modal title="Workspace tour" kicker="GUIDED PRACTICE" onClose={close}>
+          <div className="modal-body tour-replay">
+            <p className="dialog-copy">
+              Scroll the practice file, edit a line, or star it. Nothing here changes your library.
+            </p>
+            <PracticeFile />
+            <button className="btn primary" onClick={close}>
+              Finish tour
+            </button>
+          </div>
+        </Modal>
+      )}
       {dialog?.kind === 'android' && <AndroidDialog close={close} />}
       {dialog?.kind === 'settings' && (
         <Settings
           user={w.user}
           update={updUser}
+          profileSave={profileSave}
+          tour={() => modal({ kind: 'tour' })}
           onClose={close}
           auth={() => modal({ kind: 'register' })}
           logout={() => modal({ kind: 'logout' })}
@@ -1117,7 +1188,7 @@ export default function App() {
       {dialog?.kind === 'logout' && (
         <Confirm
           title="Sign out of Ft PDF?"
-          body="Your documents are saved to your account. You’ll return to a separate demo workspace."
+          body="Your documents are saved to your account. You’ll return to a separate guest workspace."
           label="Sign out"
           danger={false}
           onClose={close}

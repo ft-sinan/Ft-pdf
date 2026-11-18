@@ -306,10 +306,12 @@ public class PhoneToolsTest {
 
   @Test
   public void mergeAndExportSplitZipViaFiles() throws Exception {
+    TestFiles.libraryPdf("Merge left");
+    TestFiles.libraryPdf("Merge right");
     try (StudioScreen ui = new StudioScreen()) {
       job(ui, "Merge PDFs");
-      choose(ui, "Quarterly report.pdf", 1);
-      choose(ui, "Studio brand guidelines.pdf", 2);
+      choose(ui, "Merge left.pdf", 1);
+      choose(ui, "Merge right.pdf", 2);
       ui.fill("input[placeholder='Name your new copy']", "Two reports");
       ui.button("Run tool");
       ui.visible("canvas[aria-label='PDF page 1 of 6']");
@@ -361,10 +363,11 @@ public class PhoneToolsTest {
 
   @Test
   public void passwordProtectedCopyRoundTrip() throws Exception {
+    TestFiles.libraryPdf("Protection input");
     try (StudioScreen ui = new StudioScreen()) {
       String pw = "[role='dialog'] input[type='password']";
       job(ui, "Protect PDF");
-      choose(ui, "Quarterly report.pdf", 1);
+      choose(ui, "Protection input.pdf", 1);
       ui.fill(pw, "local-example-pass");
       ui.fill("input[placeholder='Name your new copy']", "Protected report");
       ui.button("Run tool");

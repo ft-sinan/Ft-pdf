@@ -1,11 +1,11 @@
 // Build-only. No Node runtime, localhost listener or server configuration is packaged.
 import { build } from 'vite';
-import { cp, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { cp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import { openStore, createDemo, workspace } from '../server/store.mjs';
 const assets = resolve('android/app/build/generated/ftAssets'),
-  studio = join(assets, 'studio'),
-  seed = join(assets, 'seed');
+  studio = join(assets, 'studio');
+// Also clean stale sample assets on incremental Gradle builds from 3.1.
+await rm(join(assets, 'seed'), { recursive: true, force: true });
 await build({ mode: 'android', publicDir: false, build: { outDir: studio, emptyOutDir: true } });
 // The trusted contact card and Android's exact external-link allowlist share one source.
 await cp('shared/creator-contacts.json', join(assets, 'creator-contacts.json'));
@@ -39,25 +39,4 @@ await writeFile(
 );
 const html = join(studio, 'index.html');
 await writeFile(html, (await readFile(html, 'utf8')).replace(/\s*<link rel="manifest"[^>]+>/, ''));
-await mkdir(seed, { recursive: true });
-const db = openStore(':memory:');
-try {
-  const owner = await createDemo(db),
-    { documents, collections } = workspace(db, owner),
-    now = Date.now();
-  for (const [i, d] of documents.entries()) {
-    const f = db.prepare('select bytes,content from documents where id=?').get(d.id);
-    await writeFile(join(seed, i + '.bin'), f.bytes);
-    await writeFile(join(seed, i + '.txt'), f.content);
-  }
-  await writeFile(
-    join(seed, 'manifest.json'),
-    JSON.stringify({
-      collections,
-      documents: documents.map((d) => ({ ...d, age: now - d.updated })),
-    }),
-  );
-} finally {
-  db.close();
-}
-console.log('Packaged the studio, PDF resources and 12 real example files for Android.');
+console.log('Packaged the offline studio without any sample library files.');

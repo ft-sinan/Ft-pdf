@@ -89,13 +89,18 @@ const PdfSurface = forwardRef<
   {
     d: Doc;
     revision: number;
+    source?: (signal: AbortSignal) => Promise<Response>;
+    onProtection?: (locked: boolean) => void;
     editing: boolean;
     busy: boolean;
     onDirty: (b: boolean) => void;
     onReady: (b: boolean) => void;
     commit: (blob: Blob) => Promise<void>;
   }
->(function PdfSurface({ d, revision, editing, busy, onDirty, onReady, commit }, ref) {
+>(function PdfSurface(
+  { d, revision, source, onProtection, editing, busy, onDirty, onReady, commit },
+  ref,
+) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null),
     [loading, setLoading] = useState(true),
     [rendering, setRendering] = useState(false),
@@ -139,7 +144,7 @@ const PdfSurface = forwardRef<
     onReady(false);
     setPw(null);
     (async () => {
-      const r = await readPdf(d, revision, abort.signal);
+      const r = source ? await source(abort.signal) : await readPdf(d, revision, abort.signal);
       if (!r.ok) throw new Error('The PDF could not be loaded.');
       const bytes = new Uint8Array(await r.arrayBuffer());
       if (!live) return;
@@ -151,8 +156,11 @@ const PdfSurface = forwardRef<
         standardFontDataUrl: '/pdf-assets/fonts/',
         isEvalSupported: false,
       });
+      let challenged = false;
       task.onPassword = (send: (password: string) => void, reason: number) => {
         if (live) {
+          challenged = true;
+          onProtection?.(true);
           setPassword('');
           setPw({
             send,
@@ -168,6 +176,16 @@ const PdfSurface = forwardRef<
       };
       const p = await task.promise;
       if (!live) return;
+      if (onProtection) {
+        const encrypted =
+          challenged ||
+          (await p
+            .getMetadata()
+            .then((m) => !!(m.info as { EncryptFilterName?: string }).EncryptFilterName)
+            .catch(() => true));
+        if (!live) return;
+        onProtection(encrypted);
+      }
       setPw(null);
       setPdf(p);
       setPage((n) => Math.max(1, Math.min(n, p.numPages)));
@@ -185,7 +203,7 @@ const PdfSurface = forwardRef<
       abort.abort();
       void task?.destroy();
     };
-  }, [d.id, revision, retry, onReady]);
+  }, [d.id, revision, retry, onReady, source, onProtection]);
   useEffect(() => {
     onDirty(editing && marks.length > 0);
   }, [editing, marks.length, onDirty]);
@@ -609,6 +627,7 @@ const PdfSurface = forwardRef<
             commit={commit}
             close={() => setManage(false)}
             hasMarks={marks.length > 0}
+            saveLabel={source ? 'Save a library copy' : undefined}
           />
         </Suspense>
       )}

@@ -47,11 +47,17 @@ failures=0
 # Keep diagnostic coverage independent. Every failed case still blocks publication.
 required_case() { (run_case "$@") || failures=1; }
 adb shell pm clear "$pkg"
+required_case "$pkg.OpenWithTest#firstOpenReadsWithoutSetupOrImport" 1 open-with-cold
+adb shell am force-stop "$pkg"
 required_case "$pkg.LocalProfileTest#createProfileAndCollection" 1 first-launch
 adb exec-out run-as "$pkg" cat cache/first-launch.png > "$report/first-launch.png" || true
 adb shell am force-stop "$pkg"
 required_case "$pkg.LocalProfileTest#recoverProfileAndEnforceIsolation" 1 cold-restart
 adb shell pm clear "$pkg"
+required_case "$pkg.OpenWithTest#warmOpenPreservesDraftAndSavesOnlyEditedCopy" 1 open-with-warm
+required_case "$pkg.OpenWithTest#protectedPdfRequestsOnlyItsOwnPassword" 1 open-with-password
+required_case "$pkg.OpenWithTest#shareStillRequiresIntentionalImport" 1 intentional-share
+required_case "$pkg.LibraryUpgradeTest" 1 existing-library-upgrade
 required_case "$pkg.OfflineStudioTest#createEditAndReopenPDF" 1 pdf-editor
 required_case "$pkg.OfflineStudioTest#htmlSourceIsEditableAndPreviewIsSandboxed" 1 html-editor
 required_case "$pkg.OfflineStudioTest#textRoundTripsThroughTheSystemFilesPicker" 1 files-roundtrip

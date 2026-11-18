@@ -57,7 +57,7 @@ final class DeviceLibrary extends SQLiteOpenHelper {
   }
 
   DeviceLibrary(Context c) {
-    super(c.getApplicationContext(), "ft-library-v1.db", null, 2);
+    super(c.getApplicationContext(), "ft-library-v1.db", null, 3);
     app = c.getApplicationContext();
     objects = new File(app.getFilesDir(), "documents");
     staging = new File(app.getCacheDir(), "incoming-documents");
@@ -74,7 +74,7 @@ final class DeviceLibrary extends SQLiteOpenHelper {
   @Override
   public void onCreate(SQLiteDatabase db) {
     db.execSQL(
-      "CREATE TABLE users(id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT UNIQUE,salt BLOB,hash BLOB,theme TEXT NOT NULL DEFAULT 'terracotta')"
+      "CREATE TABLE users(id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT UNIQUE,salt BLOB,hash BLOB,theme TEXT NOT NULL DEFAULT 'terracotta',birth_date TEXT,needs_setup INTEGER NOT NULL DEFAULT 0)"
     );
     db.execSQL(
       "CREATE TABLE session(slot INTEGER PRIMARY KEY CHECK(slot=1),owner TEXT NOT NULL REFERENCES users(id))"
@@ -95,6 +95,11 @@ final class DeviceLibrary extends SQLiteOpenHelper {
   @Override
   public void onUpgrade(SQLiteDatabase db, int old, int next) {
     if (old < 2) phoneLinks(db);
+    if (old < 3) {
+      // Do not reseed or remove anything, even if a file looks like an old example.
+      db.execSQL("ALTER TABLE users ADD COLUMN birth_date TEXT");
+      db.execSQL("ALTER TABLE users ADD COLUMN needs_setup INTEGER NOT NULL DEFAULT 0");
+    }
   }
 
   private void phoneLinks(SQLiteDatabase db) {
@@ -126,17 +131,6 @@ final class DeviceLibrary extends SQLiteOpenHelper {
       pairs[i + 1] == null ? JSONObject.NULL : pairs[i + 1]
     );
     return o;
-  }
-
-  private static void copy(InputStream in, OutputStream out, long max) throws IOException {
-    byte[] buf = new byte[32768];
-    int n;
-    long size = 0;
-    while ((n = in.read(buf)) != -1) {
-      size += n;
-      if (size > max) throw error("File is too large.");
-      out.write(buf, 0, n);
-    }
   }
 
   private String one(String sql, String... args) {
@@ -268,9 +262,10 @@ final class DeviceLibrary extends SQLiteOpenHelper {
 
   private JSONObject user(String owner) throws Exception {
     try (
-      Cursor c = db().rawQuery("SELECT name,email,theme FROM users WHERE id=?", new String[] {
-        owner,
-      })
+      Cursor c = db().rawQuery(
+        "SELECT name,email,theme,birth_date,needs_setup FROM users WHERE id=?",
+        new String[] { owner }
+      )
     ) {
       if (!c.moveToFirst()) throw error("Account not found.");
       return obj(
@@ -282,8 +277,12 @@ final class DeviceLibrary extends SQLiteOpenHelper {
         c.getString(1),
         "theme",
         c.getString(2),
-        "isDemo",
-        c.isNull(1)
+        "isGuest",
+        c.isNull(1),
+        "birthDate",
+        c.getString(3),
+        "needsSetup",
+        c.getInt(4) != 0
       );
     }
   }
@@ -366,72 +365,46 @@ final class DeviceLibrary extends SQLiteOpenHelper {
     return id;
   }
 
-  private String guest() throws Exception {
-    // Reuse the separate guest library when a signed-in profile signs out. Never share registered data.
+  private String guest(boolean firstOpen) throws Exception {
     String previous = one("SELECT id FROM users WHERE email IS NULL LIMIT 1");
     if (previous != null) return switchTo(previous);
-    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-    try (InputStream in = app.getAssets().open("seed/manifest.json")) {
-      copy(in, bytes, 1024 * 1024);
-    }
-    JSONObject seed = new JSONObject(bytes.toString("UTF-8"));
-    String owner = uid();
-    Map<String, String> colMap = new HashMap<>();
-    List<String> made = new ArrayList<>();
-    boolean ok = false;
+    String guest = uid();
     db().beginTransaction();
     try {
-      db().execSQL("INSERT INTO users(id,name) VALUES(?,?)", new Object[] { owner, "Alex Morgan" });
-      JSONArray cols = seed.getJSONArray("collections");
-      for (int i = 0; i < cols.length(); i++) {
-        JSONObject c = cols.getJSONObject(i);
-        String id = uid();
-        colMap.put(c.getString("id"), id);
-        db().execSQL("INSERT INTO collections VALUES(?,?,?,?)", new Object[] {
-          id,
-          owner,
-          c.getString("name"),
-          c.getString("color"),
-        });
-      }
-      JSONArray docs = seed.getJSONArray("documents");
-      for (int i = 0; i < docs.length(); i++) {
-        JSONObject d = docs.getJSONObject(i);
-        String key = uid();
-        made.add(key);
-        for (String ext : new String[] { ".bin", ".txt" })
-          try (
-            InputStream in = app.getAssets().open("seed/" + i + ext);
-            OutputStream out = new FileOutputStream(part(objects, key, ext))
-          ) {
-            copy(in, out, MAX);
-          }
-        long t = now() - d.getLong("age");
-        insert(
-          owner,
-          d.getString("name"),
-          d.getString("type"),
-          colMap.get(d.optString("collectionId")),
-          d.getBoolean("starred"),
-          t - 86400000,
-          t,
-          t,
-          d.isNull("pages") ? null : d.getInt("pages"),
-          false,
-          d.getString("cover"),
-          key,
-          part(objects, key, ".bin").length()
-        );
-      }
-      event(owner, "Welcome to your on-device library");
-      switchTo(owner);
+      db().execSQL("INSERT INTO users(id,name,needs_setup) VALUES(?,?,?)", new Object[] {
+        guest,
+        "Guest",
+        firstOpen ? 1 : 0,
+      });
+      switchTo(guest);
       db().setTransactionSuccessful();
-      ok = true;
     } finally {
       db().endTransaction();
-      if (!ok) for (String k : made) removePair(objects, k);
     }
-    return owner;
+    return guest;
+  }
+
+  private JSONObject saveProfile(String owner, JSONObject a) throws Exception {
+    String name = validName(a.getString("name"), 64),
+      birth = a.optString("birthDate", "");
+    if (!birth.isEmpty()) {
+      try {
+        if (!birth.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) throw new IllegalArgumentException();
+        java.time.LocalDate date = java.time.LocalDate.parse(birth);
+        if (
+          date.getYear() < 1 || date.isAfter(java.time.LocalDate.now())
+        ) throw new IllegalArgumentException();
+      } catch (java.time.DateTimeException | IllegalArgumentException invalid) {
+        throw error("Choose a valid date of birth that is not in the future.");
+      }
+    }
+    // Completion and both profile fields are one acknowledged write to the active profile.
+    db().execSQL("UPDATE users SET name=?,birth_date=?,needs_setup=0 WHERE id=?", new Object[] {
+      name,
+      birth.isEmpty() ? null : birth,
+      owner,
+    });
+    return user(owner);
   }
 
   private byte[] hash(String password, byte[] salt) throws Exception {
@@ -444,12 +417,12 @@ final class DeviceLibrary extends SQLiteOpenHelper {
   }
 
   private Object auth(String op, String owner, JSONObject a) throws Exception {
-    if (op.equals("logout")) return workspace(guest());
+    if (op.equals("logout")) return workspace(guest(false));
     String email = a.getString("email").trim().toLowerCase(Locale.ROOT),
       pw = a.getString("password");
     if (pw.length() > 256) throw error("Password is too long.");
     if (op.equals("register")) {
-      if (!user(owner).getBoolean("isDemo")) throw error("Sign out first.");
+      if (!user(owner).getBoolean("isGuest")) throw error("Sign out first.");
       String name = validName(a.getString("name"), 64);
       if (
         pw.length() < 8 ||
@@ -461,13 +434,10 @@ final class DeviceLibrary extends SQLiteOpenHelper {
       );
       byte[] salt = new byte[16];
       random.nextBytes(salt);
-      db().execSQL("UPDATE users SET name=?,email=?,salt=?,hash=? WHERE id=?", new Object[] {
-        name,
-        email,
-        salt,
-        hash(pw, salt),
-        owner,
-      });
+      db().execSQL(
+        "UPDATE users SET name=?,email=?,salt=?,hash=?,needs_setup=0 WHERE id=?",
+        new Object[] { name, email, salt, hash(pw, salt), owner }
+      );
       return workspace(owner);
     }
     if (now() < blockUntil) throw error("Please wait a minute before trying again.");
@@ -658,18 +628,20 @@ final class DeviceLibrary extends SQLiteOpenHelper {
   synchronized Object call(String op, JSONObject a) throws Exception {
     if (op.equals("workspace")) {
       String current = one("SELECT owner FROM session WHERE slot=1");
-      return workspace(current == null ? guest() : current);
+      return workspace(current == null ? guest(true) : current);
     }
     String u = owner(),
       id = a.optString("id", "");
     if (a.has("expectedOwner") && !u.equals(a.getString("expectedOwner"))) throw error(
-      "The library changed. Reopen the phone document."
+      "The active library changed. Reopen it and try again."
     );
     switch (op) {
       case "login":
       case "logout":
       case "register":
         return auth(op, u, a);
+      case "profile.save":
+        return saveProfile(u, a);
       case "settings":
         if (a.has("theme")) {
           String theme = a.getString("theme");

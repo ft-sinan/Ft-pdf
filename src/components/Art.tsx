@@ -189,7 +189,9 @@ export function Cover({ d }: { d: Doc }) {
               &nbsp; <b>&lt;head&gt;</b>
             </div>
             <div>
-              &nbsp;&nbsp;&nbsp; <b>&lt;title&gt;</b>Portfolio<b>&lt;/title&gt;</b>
+              &nbsp;&nbsp;&nbsp; <b>&lt;title&gt;</b>
+              {d.name}
+              <b>&lt;/title&gt;</b>
             </div>
             <div>
               &nbsp; <b>&lt;/head&gt;</b>
@@ -202,13 +204,11 @@ export function Cover({ d }: { d: Doc }) {
       ) : d.cover === 'proposal' ? (
         <div className="proposal-paper">
           <div className="microhead">
-            <span className="mini-mark" /> NORTH STUDIO <span>№ 02</span>
+            <span className="mini-mark" /> FT PDF <span>DOCX</span>
           </div>
           <div className="prop-rule" />
-          <div className="paper-title">
-            {d.name === 'Project proposal' ? 'Project proposal' : d.name}
-          </div>
-          <div className="paper-sub">PROJECT OVERVIEW</div>
+          <div className="paper-title">{d.name}</div>
+          <div className="paper-sub">WORD DOCUMENT</div>
           <div className="paper-lines">
             <i />
             <i />
@@ -218,7 +218,7 @@ export function Cover({ d }: { d: Doc }) {
       ) : d.cover === 'note' ? (
         <div className="note-paper">
           <div className="microhead">
-            FIELD NOTES <span>✳</span>
+            PLAIN TEXT <span>✳</span>
           </div>
           <div className="paper-title">{d.name}</div>
           <div className="paper-lines">
@@ -230,26 +230,18 @@ export function Cover({ d }: { d: Doc }) {
       ) : (
         <div className="report-paper">
           <div className="microhead">
-            <span>FIELDNOTES</span>
-            <span>REPORT SERIES / 04</span>
+            <span>FT PDF</span>
+            <span>DOCUMENT</span>
           </div>
-          <div className="report-title">
-            {d.name === 'Quarterly report' ? (
-              <>
-                Quarterly
-                <br />
-                report<span>.</span>
-              </>
-            ) : (
-              d.name
-            )}
-          </div>
+          <div className="report-title">{d.name}</div>
           <div className="chart">
             {[29, 45, 39, 62, 76, 66, 96].map((h, i) => (
               <i key={i} style={{ height: h + '%' }} />
             ))}
           </div>
-          <span className="report-foot">STRATEGY & INSIGHTS</span>
+          <span className="report-foot">
+            {d.pages ? `${d.pages} ${d.pages === 1 ? 'PAGE' : 'PAGES'}` : 'PDF DOCUMENT'}
+          </span>
         </div>
       )}
     </div>

@@ -1,1 +1,3 @@
 `legacy-word.doc` is the small `__tests__/data/test01.doc` interoperability fixture from [morungos/node-word-extractor](https://github.com/morungos/node-word-extractor), Git blob `7a07fcbfec25f670aa5aa03c340d1627d563d3f5`. Upstream's MIT license is included. It tests genuine binary Word import, not a renamed DOCX.
+
+`field-sheets.pdf` is a generated three-page test document with one numbered heading on each sheet. `locked-sheets.pdf` is an encrypted version (test password `fixture-only`). `brief.docx` is a generated two-paragraph Word file. Only tests use these fixtures; none are included in the application APK or web library.
