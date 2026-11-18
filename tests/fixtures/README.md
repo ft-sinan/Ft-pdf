@@ -1,0 +1,1 @@
+`legacy-word.doc` is the small `__tests__/data/test01.doc` interoperability fixture from [morungos/node-word-extractor](https://github.com/morungos/node-word-extractor), Git blob `7a07fcbfec25f670aa5aa03c340d1627d563d3f5`. Upstream's MIT license is included. It tests genuine binary Word import, not a renamed DOCX.

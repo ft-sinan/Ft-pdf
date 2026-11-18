@@ -1,0 +1,12 @@
+.git
+.github
+.cache
+node_modules
+data
+dist
+android
+tests
+test-results
+playwright-report
+.env*
+*.log
