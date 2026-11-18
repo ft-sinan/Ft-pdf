@@ -99,10 +99,22 @@ public class LocalProfileTest {
       ui.button("Actions for Private draft");
       ui.button("Move to Trash");
       ui.await("trashed", "!q(\"[aria-label='Open Private draft.txt']\")");
+      assertTrue(
+        "trash persisted before it becomes actionable",
+        ((JSONObject) db.call("document.info", new JSONObject().put("id", id))).getBoolean(
+          "trashed"
+        )
+      );
       drawer(ui);
       ui.button("Trash");
       ui.button("Restore Private draft");
       ui.await("restored", "document.body.textContent.includes('Trash is empty')");
+      assertFalse(
+        "restore persisted",
+        ((JSONObject) db.call("document.info", new JSONObject().put("id", id))).getBoolean(
+          "trashed"
+        )
+      );
       drawer(ui);
       ui.button("Personal drafts");
       ui.button("Open Private draft.txt");

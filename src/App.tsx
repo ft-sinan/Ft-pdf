@@ -378,12 +378,10 @@ export default function App() {
     if (locks.current.has(d.id))
       throw new Error('A change is still saving. Please try again in a moment.');
     locks.current.add(d.id);
-    upsert({ ...d, ...b });
+    // A newly trashed/restored row must not offer its inverse action while the
+    // original write is still locked. Publish the acknowledged record, not a guess.
     try {
       upsert(await api<Doc>(`/documents/${d.id}`, 'PATCH', b));
-    } catch (e) {
-      upsert(d);
-      throw e;
     } finally {
       locks.current.delete(d.id);
     }

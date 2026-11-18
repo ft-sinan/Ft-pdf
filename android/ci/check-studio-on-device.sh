@@ -31,26 +31,28 @@ PY
     exit 1
   fi
 }
+failures=0
+# Keep diagnostic coverage independent. Every failed case still blocks publication.
+required_case() { (run_case "$@") || failures=1; }
 adb shell pm clear "$pkg"
-run_case "$pkg.LocalProfileTest#createProfileAndCollection" 1 first-launch
-adb exec-out run-as "$pkg" cat cache/first-launch.png > "$report/first-launch.png"
+required_case "$pkg.LocalProfileTest#createProfileAndCollection" 1 first-launch
+adb exec-out run-as "$pkg" cat cache/first-launch.png > "$report/first-launch.png" || true
 adb shell am force-stop "$pkg"
-run_case "$pkg.LocalProfileTest#recoverProfileAndEnforceIsolation" 1 cold-restart
+required_case "$pkg.LocalProfileTest#recoverProfileAndEnforceIsolation" 1 cold-restart
 adb shell pm clear "$pkg"
-run_case "$pkg.OfflineStudioTest#createEditAndReopenPDF" 1 pdf-editor
-run_case "$pkg.OfflineStudioTest#htmlSourceIsEditableAndPreviewIsSandboxed" 1 html-editor
-run_case "$pkg.OfflineStudioTest#textRoundTripsThroughTheSystemFilesPicker" 1 files-roundtrip
-run_case "$pkg.OfflineStudioTest#wordFilesOpenWithAndroidEditAndSerializeOffline" 1 word-formats
-run_case "$pkg.LocalPdfWriterTest" 2 pdf-renderer
+required_case "$pkg.OfflineStudioTest#createEditAndReopenPDF" 1 pdf-editor
+required_case "$pkg.OfflineStudioTest#htmlSourceIsEditableAndPreviewIsSandboxed" 1 html-editor
+required_case "$pkg.OfflineStudioTest#textRoundTripsThroughTheSystemFilesPicker" 1 files-roundtrip
+required_case "$pkg.OfflineStudioTest#wordFilesOpenWithAndroidEditAndSerializeOffline" 1 word-formats
+required_case "$pkg.LocalPdfWriterTest" 2 pdf-renderer
 # Test permission granted and denied in separate processes. Never waive app-level opt-in.
 adb shell pm clear "$pkg"
 adb shell appops set --uid "$pkg" MANAGE_EXTERNAL_STORAGE allow
-failures=0
-(run_case "$pkg.PhoneToolsTest#sharedFilesAppearOnHomeAndOriginalIsUntouched" 1 shared-storage) || failures=1
+required_case "$pkg.PhoneToolsTest#sharedFilesAppearOnHomeAndOriginalIsUntouched" 1 shared-storage
 adb shell appops set --uid "$pkg" MANAGE_EXTERNAL_STORAGE deny
-(run_case "$pkg.PhoneToolsTest#folderGrantWorksWithoutAllFilesAccess" 1 folder-access) || failures=1
-(run_case "$pkg.PhoneToolsTest#orderAndRotatePhotosFromAndroidFiles" 1 image-pdf) || failures=1
-(run_case "$pkg.PhoneToolsTest#mergeAndExportSplitZipViaFiles" 1 toolbox-export) || failures=1
-(run_case "$pkg.PhoneToolsTest#offlineOcrProducesSearchablePages" 1 offline-ocr) || failures=1
-(run_case "$pkg.PhoneToolsTest#passwordProtectedCopyRoundTrip" 1 password-roundtrip) || failures=1
+required_case "$pkg.PhoneToolsTest#folderGrantWorksWithoutAllFilesAccess" 1 folder-access
+required_case "$pkg.PhoneToolsTest#orderAndRotatePhotosFromAndroidFiles" 1 image-pdf
+required_case "$pkg.PhoneToolsTest#mergeAndExportSplitZipViaFiles" 1 toolbox-export
+required_case "$pkg.PhoneToolsTest#offlineOcrProducesSearchablePages" 1 offline-ocr
+required_case "$pkg.PhoneToolsTest#passwordProtectedCopyRoundTrip" 1 password-roundtrip
 exit "$failures"
