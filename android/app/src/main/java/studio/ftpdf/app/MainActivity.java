@@ -9,7 +9,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
 import android.view.Gravity;
-import android.view.View;
 import android.view.WindowInsets;
 import android.webkit.*;
 import android.widget.*;
@@ -471,7 +470,8 @@ public final class MainActivity extends Activity {
   @Override
   protected void onNewIntent(Intent i) {
     super.onNewIntent(i);
-    setIntent(i);
+    // The inbox owns pending grants. Do not replace the activity’s launch intent
+    // with an already-consumed file when a second document is opened.
     queue(i);
     if (web != null) web.evaluateJavascript("window.dispatchEvent(new Event('ft:inbox'))", null);
   }

@@ -26,7 +26,7 @@ log=pathlib.Path(sys.argv[1]).read_text(errors='replace')
 errors=re.findall(r'(?:AssertionError|Exception|Error):[^\n]*(?:\n(?!\s+at |\s*at |Time:|Tests run:)[^\n]*){0,25}',log)
 extra='; '.join(line[-420:] for line in pathlib.Path(sys.argv[2]).read_text(errors='replace').splitlines() if 'CONSOLE(' in line)[-1200:]
 for err in (errors or [log[-1700:]])[:6]:
-    print('::error title=Installed APK test failed::'+(err[:250]+' ... '+err[-1400:] if len(err)>1800 else err).replace('%','%25').replace('\r','').replace('\n','%0A')+' '+extra.replace('%','%25'))
+    print('::error title=Installed APK test '+pathlib.Path(sys.argv[1]).stem+'::'+(err[:250]+' ... '+err[-1400:] if len(err)>1800 else err).replace('%','%25').replace('\r','').replace('\n','%0A')+' '+extra.replace('%','%25'))
 PY
     exit 1
   fi
@@ -37,5 +37,8 @@ adb exec-out run-as "$pkg" cat cache/first-launch.png > "$report/first-launch.pn
 adb shell am force-stop "$pkg"
 run_case "$pkg.LocalProfileTest#recoverProfileAndEnforceIsolation" 1 cold-restart
 adb shell pm clear "$pkg"
-run_case "$pkg.OfflineStudioTest" 4 editors-and-files
+run_case "$pkg.OfflineStudioTest#createEditAndReopenPDF" 1 pdf-editor
+run_case "$pkg.OfflineStudioTest#htmlSourceIsEditableAndPreviewIsSandboxed" 1 html-editor
+run_case "$pkg.OfflineStudioTest#textRoundTripsThroughTheSystemFilesPicker" 1 files-roundtrip
+run_case "$pkg.OfflineStudioTest#wordFilesOpenWithAndroidEditAndSerializeOffline" 1 word-formats
 run_case "$pkg.LocalPdfWriterTest" 2 pdf-renderer
